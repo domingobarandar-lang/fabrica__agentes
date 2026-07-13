@@ -1,0 +1,8 @@
+\# Secretos — nunca a git, nunca a Notion
+secrets/
+.env
+.env.*
+!.env.example
+
+\# Dependencias
+node_modules/
