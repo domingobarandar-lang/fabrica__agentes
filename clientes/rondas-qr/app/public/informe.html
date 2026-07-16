@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Informe de ronda — Rondas QR</title>
+  <link rel="icon" href="icono.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <div class="informe" id="contenido">
+    <p class="nota">Cargando informe…</p>
+  </div>
+  <script>
+    const CHIPS = {
+      completa: '<span class="chip chip-verde">Completa</span>',
+      completa_obs: '<span class="chip chip-ambar">Completa con observaciones</span>',
+      incompleta: '<span class="chip chip-roja">INCOMPLETA</span>',
+      en_curso: '<span class="chip">En curso</span>'
+    };
+    const esc = t => String(t == null ? '' : t).replace(/</g, '&lt;');
+    const fecha = ts => ts ? new Date(ts).toLocaleString('es-CL') : '—';
+    const horaCorta = ts => ts ? new Date(ts).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '';
+
+    (async () => {
+      const cont = document.getElementById('contenido');
+      const id = new URLSearchParams(location.search).get('id');
+      const sesion = JSON.parse(localStorage.getItem('rondasqr-admin') || 'null');
+      if (!id || !sesion) { cont.innerHTML = '<p class="nota">Abre este informe desde el panel del administrador.</p>'; return; }
+      const resp = await fetch('/api/admin/informes/' + id, { headers: { authorization: 'Bearer ' + sesion.token } });
+      if (!resp.ok) { cont.innerHTML = '<p class="nota">No se pudo cargar el informe (¿sesión caducada?).</p>'; return; }
+      const inf = await resp.json();
+
+      const faltantes = inf.detalle.filter(d => d.faltante);
+      const dur = inf.evaluacion ? inf.evaluacion.duracionMin + ' min' : '—';
+      cont.innerHTML = `
+        <div class="informe-cabecera">
+          <div>
+            <h1>Informe de ronda</h1>
+            <p class="nota">${esc(inf.condominio)}</p>
+          </div>
+          <button class="btn btn-borde no-imprimir" onclick="window.print()">🖨️ Imprimir</button>
+        </div>
+        <table>
+          <tr><th>Ronda</th><td>${esc(inf.ronda)}</td></tr>
+          <tr><th>Guardia</th><td>${esc(inf.guardia)}</td></tr>
+          <tr><th>Inicio</th><td>${fecha(inf.inicio)}</td></tr>
+          <tr><th>Fin</th><td>${fecha(inf.fin)}</td></tr>
+          <tr><th>Duración</th><td>${dur}</td></tr>
+          <tr><th>Resultado</th><td>${CHIPS[inf.estado] || esc(inf.estado)}</td></tr>
+        </table>
+        ${faltantes.length ? `<div class="alerta-grande">⚠️ ${faltantes.length} punto(s) sin marcar: ${faltantes.map(f => esc(f.nombre)).join(', ')}</div>` : ''}
+        ${inf.evaluacion && inf.evaluacion.observaciones.length
+          ? `<div class="observaciones"><strong>Observaciones</strong><br>${inf.evaluacion.observaciones.map(o => '• ' + esc(o)).join('<br>')}</div>`
+          : ''}
+        <h3 style="margin-top:18px">Detalle por punto</h3>
+        ${inf.detalle.map(d => `
+          <div class="detalle-punto">
+            <div style="width:26px; text-align:right; color:var(--texto-suave)">${d.orden}.</div>
+            <div style="flex:1">${esc(d.nombre)}</div>
+            <div>${d.faltante ? '<span class="faltante">FALTANTE</span>' : '✅ ' + horaCorta(d.hora) + (d.offline ? ' <span class="nota">(offline)</span>' : '')}</div>
+          </div>`).join('')}
+        <p class="nota" style="margin-top:16px">Generado por Rondas QR.</p>`;
+    })();
+  </script>
+</body>
+</html>

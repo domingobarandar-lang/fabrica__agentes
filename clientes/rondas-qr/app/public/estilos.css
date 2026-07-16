@@ -1,0 +1,217 @@
+/* Rondas QR — estilos de la app del guardia (uso nocturno: fondo oscuro,
+   botones grandes, alto contraste). */
+* { box-sizing: border-box; margin: 0; }
+
+:root {
+  --fondo: #0f172a;
+  --panel: #1e293b;
+  --borde: #334155;
+  --texto: #e2e8f0;
+  --texto-suave: #94a3b8;
+  --primario: #22c55e;
+  --primario-oscuro: #15803d;
+  --peligro: #ef4444;
+  --alerta: #f59e0b;
+}
+
+html, body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100%;
+}
+
+.cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--borde);
+  position: sticky;
+  top: 0;
+  background: var(--fondo);
+  z-index: 5;
+}
+.cabecera-titulo { font-weight: 700; }
+
+.chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--borde);
+  color: var(--texto-suave);
+}
+.chip-ok { border-color: var(--primario-oscuro); color: var(--primario); }
+.chip-off { border-color: var(--alerta); color: var(--alerta); }
+
+main { padding: 16px; max-width: 520px; margin: 0 auto; }
+
+.vista.oculta, .modal.oculta, .oculta { display: none !important; }
+
+h1 { font-size: 22px; margin-bottom: 12px; }
+h2 { font-size: 16px; margin: 18px 0 10px; color: var(--texto-suave); }
+
+label { display: block; margin: 12px 0; font-size: 14px; color: var(--texto-suave); }
+input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 14px;
+  font-size: 18px;
+  border-radius: 12px;
+  border: 1px solid var(--borde);
+  background: var(--panel);
+  color: var(--texto);
+}
+input:focus { outline: 2px solid var(--primario); border-color: transparent; }
+
+.btn {
+  width: 100%;
+  padding: 15px;
+  margin-top: 12px;
+  font-size: 17px;
+  font-weight: 600;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: var(--panel);
+}
+.btn-principal { background: var(--primario-oscuro); }
+.btn-principal:active { background: var(--primario); }
+.btn-borde { background: transparent; border: 1px solid var(--borde); color: var(--texto); }
+.btn-peligro { background: transparent; border: 1px solid var(--peligro); color: var(--peligro); }
+.btn-chico { width: auto; padding: 8px 14px; font-size: 14px; margin: 0; }
+.btn-gigante { padding: 22px; font-size: 20px; }
+
+.error { color: var(--peligro); margin-top: 10px; font-size: 14px; }
+.nota { color: var(--texto-suave); font-size: 13px; }
+.grande { font-size: 18px; font-weight: 700; }
+.centrado { text-align: center; margin-top: 10px; }
+
+.saludo { display: flex; justify-content: space-between; align-items: center; }
+
+.tarjeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.tarjeta .btn { width: auto; margin: 0; padding: 10px 18px; }
+.tarjeta-texto { min-width: 0; }
+
+.tarjeta-sync {
+  background: #1e3a5f;
+  border: 1px solid #2563eb;
+  color: #bfdbfe;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.ronda-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.progreso {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--primario);
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.punto {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--borde);
+}
+.punto-numero {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--borde);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--texto-suave);
+  flex-shrink: 0;
+}
+.punto-hecho .punto-numero { border-color: var(--primario); color: var(--primario); }
+.punto-hecho { opacity: 0.85; }
+.punto-texto { flex: 1; min-width: 0; }
+.punto-check { font-size: 18px; }
+
+.botonera { margin-top: 16px; }
+.botonera-fila { display: flex; gap: 10px; }
+.botonera-fila .btn { flex: 1; }
+
+.caja {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+  line-height: 1.6;
+}
+.caja-alerta { border-color: var(--alerta); color: #fde68a; }
+
+/* Escáner */
+.modal {
+  position: fixed; inset: 0;
+  background: #000;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+#video { flex: 1; width: 100%; object-fit: cover; }
+.escaner-marco {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -60%);
+  width: min(70vw, 300px);
+  aspect-ratio: 1;
+  border: 3px solid var(--primario);
+  border-radius: 18px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.escaner-pie { padding: 14px 16px 26px; background: var(--fondo); }
+
+.modal-centrado {
+  background: rgba(2, 6, 23, 0.85);
+  align-items: center;
+  justify-content: center;
+}
+.dialogo {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 16px;
+  padding: 20px;
+  width: min(90vw, 380px);
+}
+.dialogo input { text-transform: uppercase; letter-spacing: 2px; text-align: center; }
+
+/* Aviso flotante */
+.aviso {
+  position: fixed;
+  left: 16px; right: 16px; bottom: 20px;
+  padding: 14px;
+  border-radius: 12px;
+  text-align: center;
+  font-weight: 600;
+  z-index: 60;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+}
+.aviso-ok { border-color: var(--primario); color: var(--primario); }
+.aviso-error { border-color: var(--peligro); color: var(--peligro); }
+.aviso-info { color: var(--texto); }

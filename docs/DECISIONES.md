@@ -65,3 +65,19 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 **Contexto**: el build se hizo en dos tramos por límite de sesión del subagente `desarrollador` (se cortó dos veces); se retomó desde el estado real en disco cada vez, sin perder trabajo. El bug de ADV-2 solo apareció al correr la suite completa — la propia política de "mock siempre primero" de la fábrica lo atrapó antes de que José probara la demo real.
 
 **Descartado**: reintentar el build con un tercer subagente — con el trabajo ya casi terminado y de alta calidad, completar la verificación y el fix directamente fue más rápido y confiable que otro ciclo de subagente con riesgo de nuevo corte.
+
+## 2026-07-16 — Pedido rondas-qr: arquitectura
+
+**Decisión**: primera vertical no conversacional de la fábrica (`rondas-seguridad`, catálogo nuevo). Se construye desde cero como app operativa: API + motor de rondas en Node/Express, PWA offline-first para el guardia (escáner QR con `jsqr` vendorizado + `BarcodeDetector` como atajo cuando el teléfono lo trae, service worker + cola local de eventos), y panel web del administrador con hoja de QR imprimible (`qrcode` de npm, generación server-side). **Sin LLM en runtime**: flujo 100 % determinista, costo por uso $0 — aplicación directa del Principio 5 de ARQUITECTURA.md. Persistencia v1: archivo JSON con escritura atómica (cero dependencias nativas, corre igual en Windows y Railway); migración a SQLite/Postgres documentada en la entrega. Notificaciones al administrador: llamada HTTPS directa a la API de Telegram (sin SDK), `MOCK=true` por defecto; **token 2 del pool asignado a este cliente** (quedan disponibles: 1 token Telegram y 1 key Gemini). Sincronización offline: la PWA es local-first y reenvía eventos idempotentes (crear ejecución con id generado en el teléfono, escaneo por punto, cierre); el servidor revalida todo al recibirlos.
+
+**Contexto**: el pedido reemplaza chapitas iButton + lectora por QR + teléfono del guardia, con informe automático al administrador y alerta de puntos saltados. No hay conversación de por medio: clonar la base chaski habría arrastrado Telegram + LLM sin uso. De paso queda probado que la fábrica puede vender apps operativas simples además de chatbots.
+
+**Descartado**: (a) clonar `agente-citas`/`agente-retail` — nada del loop conversacional aplica; (b) usar un LLM para redactar el informe — la plantilla determinista es verificable en QA mock y cuesta $0; (c) app nativa Android — la PWA cubre cámara + offline sin pasar por tiendas; (d) generador de QR artesanal — `qrcode` de npm está batalla-probado y el riesgo no paga; (e) Supabase en v1 — para pilotos el JSON atómico basta y elimina fricción de credenciales.
+
+**Nota de pipeline**: los subagentes de la fábrica no estaban registrados en esta sesión; las fases las ejecutó el orquestador directamente (la skill lo contempla: el pedido no se detiene).
+
+## 2026-07-16 — Pedido rondas-qr: build y QA cerrados
+
+**Decisión**: build completo en `clientes/rondas-qr/app/` (API Express + motor de rondas idempotente + PWA del guardia offline-first + panel del administrador + hoja de QR imprimible) y QA en verde: 12/12 tests automatizados cubriendo los 14 casos de uso del SPEC más adversariales (permisos cruzados, cierres repetidos, reenvío offline), y smoke test en navegador sobre el servidor real con **round-trip de QR**: el PNG que genera el servidor, decodificado con jsQR (el mismo motor del teléfono), devuelve el payload exacto. Estado del pedido: **Listo para revisión**. Único fix durante QA: `node --test test/` no resuelve en Windows → script cambiado a `node --test`.
+
+**Contexto**: la demo queda sembrada (2 condominios) y con un informe de ejemplo para que el panel no parta vacío. El token 2 de Telegram del pool ya está copiado al `.env` del cliente con `MOCK=true` — activarlo es decisión de José (`MOCK=false` + chat_id del admin, pasos en OPERACION.md). Pool restante: 1 key Gemini + 1 token Telegram.

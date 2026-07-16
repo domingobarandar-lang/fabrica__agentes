@@ -6,3 +6,6 @@ secrets/
 
 \# Dependencias
 node_modules/
+
+# Datos de runtime de apps de clientes
+clientes/*/app/data/

@@ -1,0 +1,17 @@
+{
+  "name": "rondas-qr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Control de rondas de seguridad con QR — PWA del guardia + panel del administrador",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node seed.js",
+    "demo": "node seed.js --si-vacio && node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jsqr": "^1.4.0",
+    "qrcode": "^1.5.4"
+  }
+}
