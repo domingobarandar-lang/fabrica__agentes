@@ -1,0 +1,29 @@
+{
+  "name": "agente-inmobiliaria-demo",
+  "version": "0.1.0",
+  "description": "Agente conversacional inmobiliario (Corredora Andes Propiedades): búsqueda de propiedades, visitas Lu/Mi/Ju 11-14 y calificación de leads — demo por terminal",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "chat": "node scripts/chat-local.js",
+    "telegram": "node telegram/bot.js",
+    "telegram:mock": "node telegram/bot.js --mock",
+    "test": "node scripts/test-chat.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@supabase/supabase-js": "^2.38.0",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-telegram-bot-api": "^1.1.2",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
