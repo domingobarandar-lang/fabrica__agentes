@@ -339,3 +339,55 @@ test('cierre administrativo de una ronda olvidada + cierre repetido inocuo', asy
   });
   assert.equal(tarde.status, 409);
 });
+
+test('CU-15/16: verificación de presencia por GPS', async () => {
+  const marta = await login('marta', '1111');
+  const pedro = await login('pedro', '2222');
+
+  // La administradora fija la ubicación real de Portería.
+  const fijar = await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: -33.45, lon: -70.66 }
+  });
+  assert.equal(fijar.status, 200);
+  const invalida = await api('/api/admin/puntos/p-porteria', {
+    metodo: 'PUT', token: marta.token, cuerpo: { lat: 999, lon: 0 }
+  });
+  assert.equal(invalida.status, 422);
+
+  async function rondaConMarca(gps) {
+    const ini = await api('/api/ejecuciones', { metodo: 'POST', token: pedro.token, cuerpo: { rondaId: 'ronda-express' } });
+    const esc = await api(`/api/ejecuciones/${ini.datos.id}/escaneos`, {
+      metodo: 'POST', token: pedro.token, cuerpo: { codigo: 'PRT234', gps }
+    });
+    assert.equal(esc.status, 200, 'el GPS nunca bloquea la marca');
+    const cierre = await api(`/api/ejecuciones/${ini.datos.id}/cerrar`, { metodo: 'POST', token: pedro.token });
+    return cierre.datos;
+  }
+
+  // Marca a ~30 m del punto (dentro del margen de 75 m + precisión) → limpia.
+  const cerca = await rondaConMarca({ lat: -33.45027, lon: -70.66, acc: 10 });
+  assert.equal(cerca.evaluacion.gpsLejos.length, 0);
+  assert.equal(cerca.evaluacion.sinGps.length, 0);
+  assert.equal(cerca.detalle.find(d => d.puntoId === 'p-porteria').lejos, false);
+
+  // Marca a ~1.1 km → "LEJOS del punto" con la distancia exacta.
+  const lejos = await rondaConMarca({ lat: -33.46, lon: -70.66, acc: 10 });
+  assert.equal(lejos.evaluacion.gpsLejos.length, 1);
+  assert.ok(lejos.evaluacion.gpsLejos[0].distanciaM > 1000);
+  assert.ok(lejos.evaluacion.observaciones.some(o => /LEJOS del punto/.test(o)));
+  const detalleLejos = lejos.detalle.find(d => d.puntoId === 'p-porteria');
+  assert.equal(detalleLejos.lejos, true);
+  assert.ok(detalleLejos.distanciaM > 1000);
+
+  // Marca sin GPS sobre un punto verificable → observada como "sin ubicación".
+  const sinGps = await rondaConMarca(null);
+  assert.deepEqual(sinGps.evaluacion.sinGps, ['p-porteria']);
+  assert.ok(sinGps.evaluacion.observaciones.some(o => /sin ubicación GPS/.test(o)));
+
+  // GPS basura se descarta sin romper la marca.
+  const basura = await rondaConMarca({ lat: 'no', lon: {} });
+  assert.deepEqual(basura.evaluacion.sinGps, ['p-porteria']);
+
+  // Limpiar: quitar la ubicación para no afectar otros escenarios.
+  await api('/api/admin/puntos/p-porteria', { metodo: 'PUT', token: marta.token, cuerpo: { quitarUbicacion: true } });
+});

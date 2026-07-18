@@ -3,10 +3,39 @@
 // cola offline del teléfono (mismo evento dos veces = mismo resultado).
 const { id, interpretarCodigo } = require('./codigos');
 
+// Verificación de presencia (CU-16): una marca queda "lejos del punto" si la
+// distancia supera RADIO_OK_M más el margen de precisión que informa el GPS
+// del teléfono (acotado a MARGEN_PRECISION_MAX_M para que un GPS malo no
+// convierta cualquier distancia en válida).
+const RADIO_OK_M = 75;
+const MARGEN_PRECISION_MAX_M = 50;
+
 function puntosDeRonda(db, ronda) {
   return ronda.puntoIds
     .map(pid => db.puntos.find(p => p.id === pid))
     .filter(Boolean);
+}
+
+// Distancia haversine en metros entre {lat, lon}.
+function distanciaM(a, b) {
+  const rad = x => (x * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(s)));
+}
+
+// Normaliza el GPS que manda el teléfono; null si no viene o viene inválido.
+function limpiarGps(gps) {
+  if (!gps || typeof gps !== 'object') return null;
+  const lat = Number(gps.lat);
+  const lon = Number(gps.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  const acc = Number(gps.acc);
+  return { lat, lon, acc: Number.isFinite(acc) ? Math.round(acc) : null };
 }
 
 function iniciarEjecucion(db, { ejecucionId, rondaId, guardia, inicio, offline }) {
@@ -41,7 +70,7 @@ function avance(ejecucion, ronda) {
   return { hechos: ejecucion.escaneos.length, total: ronda.puntoIds.length };
 }
 
-function registrarEscaneo(db, ejecucion, { codigo, ts, offline }) {
+function registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps }) {
   if (ejecucion.estado !== 'en_curso') return { error: 'La ronda ya está cerrada.', codigo: 409 };
   const interpretado = interpretarCodigo(codigo);
   if (!interpretado) return { error: 'Código no reconocido.', codigo: 422 };
@@ -69,7 +98,8 @@ function registrarEscaneo(db, ejecucion, { codigo, ts, offline }) {
   ejecucion.escaneos.push({
     puntoId: punto.id,
     ts: ts || new Date().toISOString(),
-    offline: Boolean(offline)
+    offline: Boolean(offline),
+    gps: limpiarGps(gps)
   });
   return { punto, avance: avance(ejecucion, ronda) };
 }
@@ -106,6 +136,31 @@ function evaluar(db, ejecucion, ronda) {
     }
   }
 
+  // Verificación de presencia (solo puntos con ubicación fijada por el admin).
+  const gpsLejos = [];
+  const sinGps = [];
+  for (const esc of ejecucion.escaneos) {
+    const punto = db.puntos.find(p => p.id === esc.puntoId);
+    if (!punto || punto.lat == null || punto.lon == null) continue;
+    if (esc.gps) {
+      const d = distanciaM({ lat: esc.gps.lat, lon: esc.gps.lon }, { lat: punto.lat, lon: punto.lon });
+      esc.distanciaM = d;
+      const margen = RADIO_OK_M + Math.min(esc.gps.acc || 0, MARGEN_PRECISION_MAX_M);
+      if (d > margen) gpsLejos.push({ puntoId: esc.puntoId, distanciaM: d });
+    } else {
+      sinGps.push(esc.puntoId);
+    }
+  }
+  if (gpsLejos.length) {
+    const detalle = gpsLejos
+      .map(l => `${nombres(db, [l.puntoId])} (a ${l.distanciaM} m)`)
+      .join(', ');
+    observaciones.push(`📍 Marcas LEJOS del punto: ${detalle}.`);
+  }
+  if (sinGps.length) {
+    observaciones.push(`Marcas sin ubicación GPS en puntos verificables: ${nombres(db, sinGps)}.`);
+  }
+
   const duracionMin = Math.max(0, Math.round((new Date(ejecucion.fin) - new Date(ejecucion.inicio)) / 60000));
   if (ronda.duracionMaxMin && duracionMin > ronda.duracionMaxMin) {
     observaciones.push(`La ronda tomó ${duracionMin} min (máximo definido: ${ronda.duracionMaxMin} min).`);
@@ -114,7 +169,7 @@ function evaluar(db, ejecucion, ronda) {
     observaciones.push('Incluye marcas hechas sin conexión (hora tomada del teléfono del guardia).');
   }
 
-  return { faltantes, fueraDeOrden, duracionMin, observaciones };
+  return { faltantes, fueraDeOrden, gpsLejos, sinGps, duracionMin, observaciones };
 }
 
 function nombres(db, puntoIds) {
@@ -123,4 +178,7 @@ function nombres(db, puntoIds) {
     .join(', ');
 }
 
-module.exports = { iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres };
+module.exports = {
+  iniciarEjecucion, registrarEscaneo, cerrarEjecucion, puntosDeRonda, nombres,
+  distanciaM, RADIO_OK_M
+};

@@ -153,16 +153,49 @@ async function cargarPuntos() {
     <tr>
       <td>${esc(p.nombre)}</td>
       <td><code>${esc(p.codigoCorto)}</code></td>
+      <td>${p.lat != null
+        ? `<a href="https://maps.google.com/?q=${p.lat},${p.lon}" target="_blank">📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</a>`
+        : '<span class="nota">sin verificar</span>'}</td>
       <td>
+        <button class="btn btn-borde btn-chico" data-ubicar="${p.id}">📍 Fijar aquí</button>
+        ${p.lat != null ? `<button class="btn btn-borde btn-chico" data-desubicar="${p.id}">Quitar 📍</button>` : ''}
         <button class="btn btn-borde btn-chico" data-renombrar="${p.id}">Renombrar</button>
         <button class="btn btn-peligro btn-chico" data-eliminar="${p.id}">Eliminar</button>
       </td>
     </tr>`).join('');
   $('tabla-puntos').innerHTML = `
     <table>
-      <thead><tr><th>Punto</th><th>Código</th><th></th></tr></thead>
+      <thead><tr><th>Punto</th><th>Código</th><th>Ubicación (verificación GPS)</th><th></th></tr></thead>
       <tbody>${filas}</tbody>
     </table>`;
+  for (const btn of $('tabla-puntos').querySelectorAll('[data-ubicar]')) {
+    btn.addEventListener('click', () => {
+      const punto = puntosCache.find(p => p.id === btn.dataset.ubicar);
+      if (!('geolocation' in navigator)) return aviso('Este navegador no entrega ubicación.', 'error');
+      if (!confirm(`Fijar la ubicación de "${punto.nombre}" en donde estás parado AHORA.\n\nHazlo desde un teléfono, de pie junto al punto. ¿Continuar?`)) return;
+      aviso('Obteniendo ubicación…');
+      navigator.geolocation.getCurrentPosition(async pos => {
+        try {
+          await api(`/api/admin/puntos/${punto.id}`, {
+            metodo: 'PUT',
+            cuerpo: { lat: pos.coords.latitude, lon: pos.coords.longitude }
+          });
+          aviso('Ubicación fijada: las marcas en este punto ahora se verifican por distancia.');
+          cargarPuntos();
+        } catch (err) { aviso(err.message, 'error'); }
+      }, () => aviso('No se pudo obtener la ubicación (¿permiso denegado?).', 'error'),
+        { enableHighAccuracy: true, timeout: 15000 });
+    });
+  }
+  for (const btn of $('tabla-puntos').querySelectorAll('[data-desubicar]')) {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Quitar la ubicación? Las marcas en este punto dejarán de verificarse por GPS.')) return;
+      try {
+        await api(`/api/admin/puntos/${btn.dataset.desubicar}`, { metodo: 'PUT', cuerpo: { quitarUbicacion: true } });
+        cargarPuntos();
+      } catch (err) { aviso(err.message, 'error'); }
+    });
+  }
   for (const btn of $('tabla-puntos').querySelectorAll('[data-renombrar]')) {
     btn.addEventListener('click', async () => {
       const punto = puntosCache.find(p => p.id === btn.dataset.renombrar);

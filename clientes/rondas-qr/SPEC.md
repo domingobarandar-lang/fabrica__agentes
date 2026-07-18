@@ -34,6 +34,8 @@ Tres piezas, una sola app Node:
 - **CU-12 Hoja de QR**: el admin genera una hoja imprimible con el QR de cada punto (+ código corto al pie) para pegar en los sectores.
 - **CU-13 Entrada manual de respaldo**: si la cámara falla o el QR está dañado, el guardia tipea el código corto de 6 caracteres impreso bajo el QR — misma validación que el escaneo.
 - **CU-14 Aislamiento multi-condominio**: usuarios, puntos, rondas e informes de un condominio jamás se ven ni se validan desde otro.
+- **CU-15 GPS en cada marca** *(v1.1)*: al marcar un punto, la app adjunta la ubicación GPS del teléfono (lat/lon/precisión) si está disponible. **El GPS nunca bloquea la marca**: sin señal GPS la marca vale igual y queda etiquetada "sin ubicación".
+- **CU-16 Verificación de presencia** *(v1.1)*: el administrador puede fijar la ubicación real de cada punto (desde su teléfono parado en el lugar, o quitarla). Si un punto tiene ubicación y la marca llegó con GPS, el servidor calcula la distancia: a más de 75 m (+ margen por precisión del GPS, tope 50 m) la marca queda **"lejos del punto"** — observación destacada en el informe y en el aviso al administrador. Marcas sin GPS sobre puntos georreferenciados también quedan observadas.
 
 ## Reglas de negocio
 

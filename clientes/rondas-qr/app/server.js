@@ -115,8 +115,8 @@ function crearApp({ rutaDb } = {}) {
   app.post('/api/ejecuciones/:id/escaneos', auth, (req, res) => {
     const ejecucion = ejecucionAutorizada(req, res);
     if (!ejecucion) return;
-    const { codigo, ts, offline } = req.body || {};
-    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline });
+    const { codigo, ts, offline, gps } = req.body || {};
+    const r = motor.registrarEscaneo(db, ejecucion, { codigo, ts, offline, gps });
     if (r.error) return res.status(r.codigo).json({ error: r.error });
     store.guardar();
     res.json({
@@ -152,8 +152,21 @@ function crearApp({ rutaDb } = {}) {
   app.put('/api/admin/puntos/:id', ...admin, (req, res) => {
     const punto = db.puntos.find(p => p.id === req.params.id && p.condominioId === miCondominio(req));
     if (!punto) return res.status(404).json({ error: 'El punto no existe.' });
+    const { lat, lon, quitarUbicacion } = req.body || {};
     const nombre = String((req.body || {}).nombre || '').trim();
     if (nombre) punto.nombre = nombre;
+    if (quitarUbicacion) {
+      punto.lat = null;
+      punto.lon = null;
+    } else if (lat !== undefined || lon !== undefined) {
+      const la = Number(lat);
+      const lo = Number(lon);
+      if (!Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) {
+        return res.status(422).json({ error: 'Ubicación inválida.' });
+      }
+      punto.lat = la;
+      punto.lon = lo;
+    }
     store.guardar();
     res.json(punto);
   });

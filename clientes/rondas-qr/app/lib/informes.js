@@ -14,6 +14,7 @@ function armarInforme(db, ejecucion) {
   const guardia = db.usuarios.find(u => u.id === ejecucion.guardiaId) || {};
   const escaneosPorPunto = new Map(ejecucion.escaneos.map(e => [e.puntoId, e]));
 
+  const lejosIds = new Set(((ejecucion.evaluacion || {}).gpsLejos || []).map(l => l.puntoId));
   const detalle = (ronda.puntoIds || []).map((pid, i) => {
     const punto = db.puntos.find(p => p.id === pid) || { id: pid, nombre: '(punto eliminado)' };
     const esc = escaneosPorPunto.get(pid);
@@ -23,6 +24,9 @@ function armarInforme(db, ejecucion) {
       nombre: punto.nombre,
       hora: esc ? esc.ts : null,
       offline: esc ? esc.offline : false,
+      gps: esc ? esc.gps || null : null,
+      distanciaM: esc && esc.distanciaM != null ? esc.distanciaM : null,
+      lejos: lejosIds.has(pid),
       faltante: !esc
     };
   });
@@ -59,7 +63,7 @@ function informeTexto(inf) {
   for (const d of inf.detalle) {
     lineas.push(d.faltante
       ? `❌ ${d.orden}. ${d.nombre} — FALTANTE`
-      : `✅ ${d.orden}. ${d.nombre} — ${hora(d.hora)}${d.offline ? ' (offline)' : ''}`);
+      : `✅ ${d.orden}. ${d.nombre} — ${hora(d.hora)}${d.offline ? ' (offline)' : ''}${d.lejos ? ` ⚠️ a ${d.distanciaM} m del punto` : ''}`);
   }
   if (inf.evaluacion && inf.evaluacion.observaciones.length) {
     lineas.push('');

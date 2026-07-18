@@ -12,6 +12,41 @@ let sincronizando = false;
 let stream = null;
 let escaneando = false;
 let ultimoCodigoLeido = { valor: null, ts: 0 };
+let gpsWatchId = null;
+let gpsActual = null;
+
+// ---------- GPS (CU-15): se observa mientras hay ronda activa ----------
+// Nunca bloquea una marca: si no hay señal GPS, la marca vale igual.
+
+function iniciarGps() {
+  if (gpsWatchId !== null || !('geolocation' in navigator)) return;
+  gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      gpsActual = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        acc: Math.round(pos.coords.accuracy || 0),
+        ts: Date.now()
+      };
+    },
+    () => {},
+    { enableHighAccuracy: true, maximumAge: 15000, timeout: 12000 }
+  );
+}
+
+function detenerGps() {
+  if (gpsWatchId !== null && 'geolocation' in navigator) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+  }
+  gpsWatchId = null;
+  gpsActual = null;
+}
+
+// Última posición si tiene menos de 1 minuto; si no, nada.
+function gpsFresco() {
+  if (!gpsActual || Date.now() - gpsActual.ts > 60000) return null;
+  return { lat: gpsActual.lat, lon: gpsActual.lon, acc: gpsActual.acc };
+}
 
 // ---------- Estado persistente ----------
 
@@ -114,6 +149,7 @@ async function entrar() {
 
 function salir() {
   if (estado.cola.length && !confirm('Hay marcas sin enviar al servidor. ¿Salir igual?')) return;
+  detenerGps();
   api('/api/logout', { metodo: 'POST' }).catch(() => {});
   estado = { sesion: null, paquete: null, ejecucion: null, cola: [], ultimoInforme: null };
   guardarEstado();
@@ -146,6 +182,7 @@ function iniciarRonda(rondaId) {
   estado.ultimoInforme = null;
   estado.cola.push({ tipo: 'iniciar', ejecucionId: estado.ejecucion.id, rondaId, inicio: estado.ejecucion.inicio });
   guardarEstado();
+  iniciarGps();
   render();
   sincronizar();
 }
@@ -182,13 +219,15 @@ function procesarCodigo(texto) {
   }
 
   const ts = new Date().toISOString();
-  ejecucion.escaneos.push({ puntoId: punto.id, ts, offline: !navigator.onLine });
+  const gps = gpsFresco();
+  ejecucion.escaneos.push({ puntoId: punto.id, ts, offline: !navigator.onLine, gps });
   estado.cola.push({
     tipo: 'escaneo',
     ejecucionId: ejecucion.id,
     codigo: limpio,
     ts,
-    offline: !navigator.onLine
+    offline: !navigator.onLine,
+    gps
   });
   guardarEstado();
   navigator.vibrate && navigator.vibrate(120);
@@ -210,6 +249,7 @@ function cerrarRonda() {
   ejecucion.fin = new Date().toISOString();
   estado.cola.push({ tipo: 'cerrar', ejecucionId: ejecucion.id, fin: ejecucion.fin });
   guardarEstado();
+  detenerGps();
   render();
   sincronizar();
 }
@@ -231,7 +271,7 @@ async function sincronizar() {
         } else if (evento.tipo === 'escaneo') {
           await api(`/api/ejecuciones/${evento.ejecucionId}/escaneos`, {
             metodo: 'POST',
-            cuerpo: { codigo: evento.codigo, ts: evento.ts, offline: evento.offline }
+            cuerpo: { codigo: evento.codigo, ts: evento.ts, offline: evento.offline, gps: evento.gps || null }
           });
         } else if (evento.tipo === 'cerrar') {
           const informe = await api(`/api/ejecuciones/${evento.ejecucionId}/cerrar`, {
@@ -409,11 +449,12 @@ function renderSync() {
 
 function renderRonda() {
   mostrarVista('vista-ronda');
+  iniciarGps(); // cubre recarga de página con ronda activa
   const ronda = rondaActual();
   const ejecucion = estado.ejecucion;
   $('ronda-nombre').textContent = ronda.nombre;
   const hechos = ejecucion.escaneos.length;
-  $('ronda-avance').textContent = `Iniciada ${hora(ejecucion.inicio)}${ronda.ordenEstricto ? ' · orden estricto' : ''}`;
+  $('ronda-avance').textContent = `Iniciada ${hora(ejecucion.inicio)}${ronda.ordenEstricto ? ' · orden estricto' : ''}${gpsActual ? ' · 📍 GPS' : ''}`;
   $('ronda-progreso').textContent = `${hechos}/${ronda.puntos.length}`;
 
   const lista = $('lista-puntos');

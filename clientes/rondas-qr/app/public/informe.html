@@ -57,8 +57,11 @@
         ${inf.detalle.map(d => `
           <div class="detalle-punto">
             <div style="width:26px; text-align:right; color:var(--texto-suave)">${d.orden}.</div>
-            <div style="flex:1">${esc(d.nombre)}</div>
-            <div>${d.faltante ? '<span class="faltante">FALTANTE</span>' : '✅ ' + horaCorta(d.hora) + (d.offline ? ' <span class="nota">(offline)</span>' : '')}</div>
+            <div style="flex:1">${esc(d.nombre)}${d.lejos ? ` <span class="faltante">⚠️ a ${d.distanciaM} m del punto</span>` : ''}</div>
+            <div>
+              ${d.faltante ? '<span class="faltante">FALTANTE</span>' : '✅ ' + horaCorta(d.hora) + (d.offline ? ' <span class="nota">(offline)</span>' : '')}
+              ${d.gps ? ` <a class="nota" href="https://maps.google.com/?q=${d.gps.lat},${d.gps.lon}" target="_blank" title="Dónde se hizo la marca">🗺️</a>` : ''}
+            </div>
           </div>`).join('')}
         <p class="nota" style="margin-top:16px">Generado por Rondas QR.</p>`;
     })();
