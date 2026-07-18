@@ -89,3 +89,9 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 **Contexto**: José pidió además el proyecto empaquetado: `rondas-qr-v1.zip` en su Escritorio (sin node_modules, sin data/, sin .env). Se regenera con la v1.1.
 
 **Descartado**: (a) QR dinámico con pantallas — más caro y frágil que NFC sin ser más seguro; (b) biometría por marca — fricción nocturna injustificada; (c) publicar en tiendas ahora — costo y fricción sin beneficio para un B2B cerrado; (d) subagente revisor adversarial del design doc — sesión spawned, revisión propia registrada (José puede re-correr /office-hours interactivo si quiere el loop completo).
+
+## 2026-07-17 — rondas-qr migrado a repo propio
+
+**Decisión**: por pedido explícito de José, el proyecto sale de la fábrica: carpeta local movida de `clientes/rondas-qr/` a `C:\Users\Adela\rondas-qr\` y repo privado propio `domingobarandar-lang/rondas-qr` (commit inicial `e0af1d2`, 37 archivos, sin `.env` ni `data/`). En la fábrica quedan: la vertical `catalogo/rondas-seguridad.md` (conocimiento de venta, apunta al repo nuevo), la asignación del token 2 en `secrets/README.md` (los valores siguen solo en `secrets/pool.env` y en el `.env` local del proyecto), y este historial de decisiones. El historial git viejo del proyecto permanece en los commits pasados de fabrica__agentes (no se reescribió historia remota — destructivo e innecesario).
+
+**Contexto**: repo propio permite dar acceso al cliente o a otro desarrollador sin exponer la fábrica completa.

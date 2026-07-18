@@ -14,4 +14,4 @@
 
 **Datos que pide al cliente**: nombre del condominio, lista de sectores/puntos, nómina de guardias, definición de rondas (qué puntos, en qué orden, cada cuánto, duración máxima).
 
-**Referencia construida**: `clientes/rondas-qr/` (primera implementación, 2026-07-16).
+**Referencia construida**: repo propio `https://github.com/domingobarandar-lang/rondas-qr` (privado; local en `C:\Users\Adela\rondas-qr\`). Primera implementación 2026-07-16, migrada fuera de la fábrica el 2026-07-17 por pedido de José.
