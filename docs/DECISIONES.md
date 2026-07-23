@@ -22,7 +22,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 ## 2026-07-13 — Runtime independiente de Anthropic
 
-**Decisión**: el punto de acople con Anthropic (`agent/llm.js`) se reemplaza por un adapter multi-proveedor (`plantillas/base-agente/llm.js`) que habla OpenAI-compatible (Groq, DeepSeek, Gemini, OpenRouter, Ollama) manteniendo Anthropic como opción. Proveedor por defecto para demos: Gemini Flash free tier u Ollama local. Escala futura: gateway LiteLLM con presupuesto por cliente.
+**Decisión**: el punto de acople con Anthropic (`agent/llm.js`) se reemplaza por un adapter multi-proveedor (`lineas/conversacional/plantillas/base-agente/llm.js`) que habla OpenAI-compatible (Groq, DeepSeek, Gemini, OpenRouter, Ollama) manteniendo Anthropic como opción. Proveedor por defecto para demos: Gemini Flash free tier u Ollama local. Escala futura: gateway LiteLLM con presupuesto por cliente.
 
 **Contexto**: el gasto de API a escala de varios clientes sería el principal riesgo del negocio. Build-time queda en la suscripción de Claude Code (costo fijo); runtime en proveedores baratos (costo variable mínimo). Detalle en ARQUITECTURA.md.
 
@@ -95,3 +95,57 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 **Decisión**: por pedido explícito de José, el proyecto sale de la fábrica: carpeta local movida de `clientes/rondas-qr/` a `C:\Users\Adela\rondas-qr\` y repo privado propio `domingobarandar-lang/rondas-qr` (commit inicial `e0af1d2`, 37 archivos, sin `.env` ni `data/`). En la fábrica quedan: la vertical `catalogo/rondas-seguridad.md` (conocimiento de venta, apunta al repo nuevo), la asignación del token 2 en `secrets/README.md` (los valores siguen solo en `secrets/pool.env` y en el `.env` local del proyecto), y este historial de decisiones. El historial git viejo del proyecto permanece en los commits pasados de fabrica__agentes (no se reescribió historia remota — destructivo e innecesario).
 
 **Contexto**: repo propio permite dar acceso al cliente o a otro desarrollador sin exponer la fábrica completa.
+
+## 2026-07-22 — Reestructuración en líneas de producción
+
+**Decisión**: la fábrica pasa de una sola línea (disfrazada de fábrica) a dos líneas que no se mezclan: `lineas/conversacional/` (lo de hoy) y `lineas/automatizacion/` (procesos internos del negocio). Cada línea con su `LINEA.md`, `catalogo/` y `plantillas/`. `docs/` sigue siendo la capa común. `/fabrica` gana una fase 0 que clasifica la línea con 4 preguntas.
+
+**Contexto**: José vende automatización de procesos a pymes de servicio y el pipeline no tenía dónde ponerla (un producto no-bot terminaba construido fuera del repo, sin plantilla). Hay entregas conversacionales con precio acordado, así que el cuello de botella es capacidad de entrega, no venta.
+
+**Descartado**: (a) dos fábricas separadas (repos distintos) — duplica canal/LLM/Notion y mata la premisa "el bot es un canal del proceso"; (b) motor de procesos genérico con presets (Approach C) — es la plataforma genérica que ya se descartó el 13-jul, meses antes del primer peso. Approach A (zonas con capa común) es reversible, barata (~2-3h CC) y es el primer piso de C.
+
+## 2026-07-22 — Los proyectos nacen fuera del repo, una carpeta por cliente
+
+**Decisión**: ningún proyecto de cliente vive dentro de `fabrica__agentes/`. Cada cliente nace en una carpeta propia fuera del repo, con git propio, creada con `nuevo-proyecto.ps1` (crea la carpeta madre si falta, `git init`, `.gitignore` con `.env`/`node_modules` **antes** del primer add, `Test-Path` fail-closed que no sobrescribe un proyecto existente). El orquestador pasa la ruta absoluta externa a cada subagente; los subagentes tienen guarda "sin ruta DETENTE" y nunca usan el directorio actual.
+
+**Contexto**: con volumen real, `clientes/<slug>/` dentro del repo convertía la maquinaria en depósito de proyectos (git lento, imposible entregar/archivar un cliente por separado). El respaldo de las carpetas externas lo maneja José (crea la carpeta madre donde quiera respaldarla).
+
+**Descartado**: `clientes/` versionado como destino de proyectos NUEVOS. Los proyectos que ya viven ahí (marcha blanca: `dental-sanmartin`, `inmobiliaria-demo`) **se quedan; no se migran**. `clientes/_plantilla/` sigue como plantilla de BRIEF.
+
+## 2026-07-22 — Índice de clientes: el disco es la fuente de verdad, Notion es el reporte
+
+**Decisión**: no hay archivo `registro/` local versionado. El disco (la carpeta madre de clientes) es la fuente de verdad de "qué clientes/proyectos existen"; la base "Pedidos" en Notion gana un campo **Ruta** y es la vista de reporte. Caché local derivada de solo lectura como respaldo si Notion no responde; nunca se edita a mano ni manda sobre el disco.
+
+**Contexto**: la revisión de ingeniería (autoplan, 22-jul) notó que hacer a Notion la fuente única invierte la autoridad: un pipeline que crea la carpeta y se cae antes de registrar en Notion dejaría al cliente invisible. El disco no se cae ni tiene rate limit.
+
+**Descartado**: (a) `registro/clientes.md` versionado — refutado por la decisión de no meter proyectos al repo; (b) Notion como registro maestro — invierte la autoridad respecto del disco.
+
+## 2026-07-22 — Premisa 3 revisada: base compartida + piezas reusables
+
+**Decisión** (gate de premisas con José, autoplan): los 3 productos de automatización NO son idénticos. Comparten una **base pelada** (objeto con estados + emisor de avisos + panel), pero el producto 2 y el 3 agregan **piezas reusables**: "reloj" (avisos por tiempo, un cron) y "oreja" (el cliente responde y eso mueve el estado, un webhook). Se construye primero el producto 1 (base pelada, la cuña más angosta); el reloj y la oreja se construyen una vez y se reusan. Las 3 fichas de catálogo se escriben ahora (decisión de José) marcando la pieza extra de cada una.
+
+**Contexto**: la premisa original ("los 3 son el mismo esqueleto") sobrestimaba el reuso y habría hecho parecer gratis al 2 y al 3. José la corrigió en el gate.
+
+**Descartado**: (a) dejar la premisa como "los 3 son iguales" — habría mordido al cotizar el 2/3; (b) dejar solo el producto 1 en el catálogo — José prefirió las 3 fichas ahora para poder cotizar en reunión.
+
+## 2026-07-22 — Cortafuegos de envío: falla cerrado, garantía acotada a QA
+
+**Decisión**: la plantilla `base-proceso` (cuando se construya) lleva un emisor único de avisos que falla cerrado — sin `MODO_ENVIO=produccion` **exacto** simula y lo anuncia en el arranque. Allowlist estricta, anti-duplicado por `(objeto, estado)`, y **la garantía "cero efectos externos" es de build/QA, no de producción** (en producción el cron de Railway envía con su propio entorno). La regla dura de la constitución pasa de "0 tokens" a "cero efectos externos" en QA. `base-proceso` se construye con el primer cliente real de automatización, no antes.
+
+**Contexto**: revisión de ingeniería (autoplan). Protege a los clientes del cliente (que no les lleguen avisos de prueba), no solo la billetera. El anti-duplicado lo agregó la revisión (un reintento no puede avisar dos veces).
+
+**Descartado**: cortafuegos como filtro de producción — falso; en producción sí se envía. Es una guarda de desarrollo/QA.
+
+## 2026-07-22 — Frontera de postventa por tamaño del cambio
+
+**Decisión**: lo entregado sale del alcance de la fábrica. Cambio chico (horario, precio, texto) → José lo edita directo con Claude Code, sin fábrica. Cambio grande (nueva capacidad/tool/flujo/estado) → vuelve a la fábrica y actualiza SPEC + QA. No hay migración de lo ya entregado a la estructura nueva.
+
+**Contexto**: corrige la contradicción de `FLUJO-COMERCIAL.md` (que mandaba todo cambio a la fábrica). La frontera la pone el tamaño, no el tipo.
+
+## 2026-07-23 — Integración con el repo real + rondas fuera del catálogo
+
+**Decisión**: al ir a pushear la reestructura se detectó que la copia local estaba atrasada 4 commits respecto de `origin/main` (era el snapshot de respaldo de OneDrive). Se integró por rebase sobre el remoto real, **preservando** los dos agentes en marcha blanca (`clientes/dental-sanmartin`, `clientes/inmobiliaria-demo`) y el Modo Mejora. Los dos proyectos existentes se quedan dentro de `clientes/` (regla de marcha blanca); la regla "proyectos afuera" aplica a los nuevos. Se quitó del catálogo `catalogo/rondas-seguridad.md` (decisión de José): rondas-qr ya vive en su repo propio y queda fuera del diseño de líneas.
+
+**Contexto**: el trabajo real (agentes entregados + Modo Mejora) estaba solo en GitHub, no en la copia local. **No se forzó el push** para no borrar trabajo entregado (regla 5): se rebaseó encima del remoto.
+
+**Descartado**: force-push de la reestructura — habría borrado los dos agentes entregados y el Modo Mejora.

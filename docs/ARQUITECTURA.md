@@ -13,7 +13,7 @@ Regla: **la calidad de la fábrica no se negocia; el costo del runtime sí.** Un
 
 Casi todos los proveedores exponen el mismo endpoint `/v1/chat/completions`: Groq, DeepSeek, Gemini (modo compatibilidad), OpenRouter, Together, Mistral, y los servidores locales (Ollama, vLLM, LM Studio). Anthropic es la excepción con formato propio.
 
-Por eso `plantillas/base-agente/llm.js` traduce el formato interno del agente (Anthropic Messages, que ya usa todo el código de chaski) ↔ OpenAI-compatible. Resultado: **cambiar de proveedor = cambiar 3 variables de entorno**, cero cambios de código.
+Por eso `lineas/conversacional/plantillas/base-agente/llm.js` traduce el formato interno del agente (Anthropic Messages, que ya usa todo el código de chaski) ↔ OpenAI-compatible. Resultado: **cambiar de proveedor = cambiar 3 variables de entorno**, cero cambios de código.
 
 ```
 LLM_PROVIDER=openai-compat        # o "anthropic" para volver atrás
@@ -68,3 +68,33 @@ Dos opciones por cliente (decisión de José, la fábrica prepara ambas):
 
 - Los agentes chaski existentes siguen apuntando a Anthropic — migrar cuando toque tocarlos (no urgente: hoy no tienen tráfico real).
 - El adapter traduce tool use en formato estricto; probar siempre `telegram:mock` + 1 conversación real al cambiar de proveedor, porque la calidad del tool-calling varía entre modelos.
+
+---
+
+# Línea de automatización — stack y cortafuegos de envío
+
+Los principios 1-6 de arriba son de la línea conversacional (costo de LLM). La línea de automatización tiene su propia arquitectura.
+
+## Stack (decidido)
+
+**Node + Express + Supabase + PWA + Railway + WhatsApp Cloud API.** Cero fichas de innovación: es exactamente lo que la fábrica ya opera en la línea conversacional. Nada nuevo que aprender ni mantener.
+
+- **Express**: la máquina de estados del objeto (recibido → en proceso → listo → ...) y el webhook que recibe respuestas del cliente (la "oreja", cuando el producto la necesita).
+- **Supabase**: el estado del objeto y el historial. Un schema por cliente.
+- **PWA**: el panel del dueño (abrir el teléfono y ver lo pendiente/atrasado). Se sirve desde Railway; **cómo se sirve (dominio, autenticación) es la decisión de stack pendiente** que se toma con el primer cliente real, no antes.
+- **Railway**: hosting del proceso + el cron de avisos por tiempo (la "pieza reloj").
+- **WhatsApp Cloud API**: el canal de los avisos al cliente final.
+
+La plantilla `base-proceso` se construye **con el primer cliente real de automatización**, no antes. Fijar la forma de la máquina de estados con un cliente inventado es el error que `DECISIONES.md` ya descartó (plataforma genérica antes del primer peso).
+
+## Cortafuegos de envío (contrato)
+
+Todo aviso al cliente final sale por **un solo emisor**. Ese emisor **falla cerrado**:
+
+1. **Allowlist estricta.** Solo el valor **exacto** `MODO_ENVIO=produccion` envía de verdad. Cualquier otra cosa (variable ausente, vacía, `"prod"`, `"true"`, un typo) → **simula**: escribe el aviso a un log y no manda nada.
+2. **Se anuncia en el arranque.** Al iniciar, el proceso dice en qué modo está ("MODO SIMULACIÓN — los avisos NO se envían" o "MODO PRODUCCIÓN — los avisos SÍ se envían"). Imposible no darse cuenta.
+3. **Alcance de la garantía: build y QA.** El cortafuegos protege desarrollo y QA. En producción el cron de Railway corre con SU propio entorno (`MODO_ENVIO=produccion`) y ahí sí envía — **no es un filtro de producción, es una guarda de desarrollo/QA**. En QA se promete "cero efectos externos"; en producción se promete "envía a quien corresponde", no "no envía".
+4. **Anti-duplicado (idempotencia).** Antes de emitir, deduplicar por `(objeto, estado_nuevo)`. Un reintento, un redeploy o una transición repetida **no** puede mandarle dos veces el mismo aviso al mismo cliente. Esto es lo que ve el cliente del cliente, así que es regla dura, no optimización.
+5. **Emisor único.** No existe un segundo lugar en el código que mande un WhatsApp. Si aparece, es un bug: todo pasa por el cortafuegos.
+
+QA verifica los puntos 1, 2 y 4 explícitamente (ver `.claude/agents/qa.md`).

@@ -1,6 +1,9 @@
 # 🏭 Fábrica de Agentes
 
-Fábrica de agentes conversacionales para pymes: agendamiento (clínicas dentales, inmobiliarias, servicios), retail (petshops, abarrotes) y atención al cliente en canales digitales (WhatsApp, Telegram, web).
+Fábrica de productos para pymes de servicio, en dos líneas de producción que no se mezclan:
+
+- **Conversacional** — agentes que conversan: agendamiento (clínicas dentales, inmobiliarias, servicios), retail (petshops, abarrotes) y atención al cliente por WhatsApp/Telegram/web.
+- **Automatización** — procesos internos del negocio: orden de trabajo, cotización y cierre, sesiones recurrentes. Un objeto avanza por estados, avisa solo en cada cambio, y el dueño ve un panel.
 
 **Modelo de operación**: José entrega el pedido del cliente → Claude (COO de la fábrica) construye, testea y documenta de forma autónoma → José evalúa → se itera hasta entregar.
 
@@ -12,24 +15,37 @@ Abrir Claude Code en esta carpeta y correr:
 /fabrica "clínica dental San Martín necesita un bot de WhatsApp para agendar horas, 3 doctores, lunes a viernes"
 ```
 
-La fábrica hace el resto: spec, arquitectura, build sobre la plantilla probada, QA en modo mock, kit de entrega y documentación en Notion. El resultado queda en `clientes/<slug>/` listo para revisar.
+La fábrica hace el resto: clasifica la línea, spec, arquitectura, build sobre la plantilla probada, QA con cero efectos externos, kit de entrega y documentación en Notion. El resultado queda en la carpeta externa del proyecto (una por cliente, fuera del repo) listo para revisar.
 
 ## Estructura
 
+Este repo guarda **solo la maquinaria**. Los proyectos de clientes nacen **fuera**, en una carpeta por cliente (ver `CLAUDE.md`).
+
 ```
-Fabrica_Agentes/
-├── CLAUDE.md               # Constitución: rol, autonomía, reglas
+fabrica__agentes/
+├── CLAUDE.md               # Constitución: rol, autonomía, reglas duras
+├── nuevo-proyecto.ps1      # Crea la carpeta externa de un proyecto (git + .gitignore seguro)
 ├── .claude/
-│   ├── skills/fabrica/     # La skill maestra (pipeline completo)
+│   ├── skills/fabrica/     # La skill maestra (pipeline completo, clasifica la línea)
 │   └── agents/             # Equipo: analista, desarrollador, qa, marketing, documentador
+├── lineas/
+│   ├── conversacional/     # Línea 1: agentes que conversan
+│   │   ├── LINEA.md
+│   │   ├── catalogo/       # Verticales listos para vender
+│   │   └── plantillas/base-agente/   # Adapter LLM + guía de instanciación
+│   └── automatizacion/     # Línea 2: procesos internos del negocio
+│       ├── LINEA.md
+│       ├── catalogo/       # orden-de-trabajo, cotizacion-y-cierre, sesiones-recurrentes
+│       └── plantillas/base-proceso/  # Esqueleto (se construye con el 1er cliente)
 ├── docs/
-│   ├── PIPELINE.md         # Fases y definición de "terminado"
-│   ├── ARQUITECTURA.md     # Independencia del proveedor de LLM + control de costos
+│   ├── PIPELINE.md         # Fases (incluye fase 0 de clasificación) y DoD
+│   ├── ARQUITECTURA.md     # Independencia LLM (conversacional) + stack y cortafuegos (automatización)
+│   ├── FLUJO-COMERCIAL.md  # De prospecto a mensualidad + frontera de postventa
 │   └── DECISIONES.md       # Registro de decisiones (espejo en Notion)
-├── plantillas/
-│   └── base-agente/        # Adapter LLM multi-proveedor + guía de instanciación
-├── catalogo/               # Verticales listos para vender
-└── clientes/               # Un folder por pedido
+├── secrets/                # Pool de credenciales (ignorado por git)
+└── clientes/
+    ├── _plantilla/         # Plantilla de BRIEF (el índice real vive en Notion)
+    └── <marcha-blanca>/    # dental-sanmartin, inmobiliaria-demo (se quedan; los NUEVOS nacen afuera)
 ```
 
 ## Base tecnológica

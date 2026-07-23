@@ -16,7 +16,7 @@ El ciclo tiene 5 etapas. José hace la venta y la relación con el cliente; la f
 ## Etapa B — Construcción (fábrica, autónoma — costo $0 de runtime)
 
 4. José entrega el pedido: `/fabrica "clínica dental San Martín, 3 doctores, agendar horas, lunes a viernes"`.
-5. El pipeline corre solo (intake → spec → arquitectura → build → QA en mock → kit de entrega → Notion). Sale en `clientes/<slug>/`:
+5. El pipeline corre solo (fase 0 clasificación → intake → spec → arquitectura → build → QA con cero efectos externos → kit de entrega → Notion). Sale en la carpeta externa del proyecto (una por cliente, fuera del repo):
    - El agente funcionando (`npm run telegram:mock` para probarlo sin gastar nada)
    - `entrega/DEMO.md` — guion de demo de 5 minutos
    - `entrega/ONE-PAGER.md` — argumento de venta en lenguaje del dueño
@@ -53,11 +53,12 @@ Lo único que separa la demo de producción son credenciales reales. Checklist p
 ## Etapa E — Entrega y operación recurrente
 
 12. **Entrega formal**: capacitación de 30 min al dueño con `OPERACION.md` (qué hace el bot, qué no, cómo pedir cambios, a quién escribirle si algo falla = José).
-13. **Operación mensual** (esto ES el negocio recurrente):
-    - Cambios de horarios/precios/textos: el cliente le pide a José → José a la fábrica → cambio + QA en mock + redeploy (minutos)
-    - Todo cambio a agente entregado se registra con `/bitacora-chaski`
-    - Monitoreo: logs de Railway + costos de LLM (con LiteLLM, por cliente)
-14. **Cobro de mensualidad** y venta de extras del catálogo (recordatorios de citas, reportes mensuales, lista de espera) — cada extra es un upsell ya especificado en `catalogo/`.
+13. **Operación mensual** (esto ES el negocio recurrente). **La frontera de la postventa la pone el TAMAÑO del cambio** (la fábrica solo construye; lo entregado lo maneja José):
+    - **Cambio chico** (un horario, un precio, un texto): José lo edita **directo con Claude Code, sin la fábrica** — minutos, sin pasar por el pipeline.
+    - **Cambio grande** (nueva capacidad, nueva tool, cambio de flujo, nuevo estado): **vuelve a la fábrica** → actualiza SPEC + QA + redeploy. No se parcha sin actualizar SPEC.
+    - Todo cambio a agente entregado se registra con `/bitacora-chaski`.
+    - Monitoreo: logs de Railway + costos de LLM (con LiteLLM, por cliente).
+14. **Cobro de mensualidad** y venta de extras del catálogo (recordatorios de citas, reportes mensuales, lista de espera) — cada extra es un upsell ya especificado en `lineas/conversacional/catalogo/`.
 
 ## Costos de operación reales por cliente (para calcular margen)
 

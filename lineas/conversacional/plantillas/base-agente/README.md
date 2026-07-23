@@ -4,15 +4,15 @@ La base de todo agente es `C:\Users\Adela\chaski-agentes\` (probada: 13/13 y 24/
 
 ## Pasos (fase Build del pipeline)
 
-1. **Clonar la base** según vertical:
+1. **Clonar la base** según vertical (`<RUTA_PROYECTO>` = la carpeta externa del proyecto que te pasó el orquestador; nunca dentro del repo de la fábrica):
    ```powershell
    # agendamiento (dental, inmobiliaria, servicios):
-   robocopy C:\Users\Adela\chaski-agentes\agente-citas clientes\<slug>\agente /E /XD node_modules /XF .env
+   robocopy C:\Users\Adela\chaski-agentes\agente-citas <RUTA_PROYECTO>\agente /E /XD node_modules /XF .env
    # catálogo/pedidos (petshop, abarrotes, retail):
-   robocopy C:\Users\Adela\chaski-agentes\agente-retail clientes\<slug>\agente /E /XD node_modules /XF .env
+   robocopy C:\Users\Adela\chaski-agentes\agente-retail <RUTA_PROYECTO>\agente /E /XD node_modules /XF .env
    ```
 
-2. **Independizar el LLM**: copiar `plantillas/base-agente/llm.js` sobre `agente/agent/llm.js` y agregar a `.env.example`:
+2. **Independizar el LLM**: copiar `lineas/conversacional/plantillas/base-agente/llm.js` sobre `agente/agent/llm.js` y agregar a `.env.example`:
    ```
    LLM_PROVIDER=gemini          # anthropic | groq | deepseek | gemini | openrouter | ollama | openai-compat
    LLM_API_KEY=
