@@ -149,3 +149,11 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 **Contexto**: el trabajo real (agentes entregados + Modo Mejora) estaba solo en GitHub, no en la copia local. **No se forzó el push** para no borrar trabajo entregado (regla 5): se rebaseó encima del remoto.
 
 **Descartado**: force-push de la reestructura — habría borrado los dos agentes entregados y el Modo Mejora.
+
+## 2026-07-23 — Protocolo anti-amnesia: semáforo tri-nivel + bitácora + hook de aviso
+
+**Decisión**: se instala el protocolo que José aprobó en office-hours. (1) **Semáforo de cambios** en `CLAUDE.md`: 🟢 (anoto una línea) / 🟡 (sigo pero queda PENDIENTE DE LECTURA) / 🔴 (me detengo). El nivel no es criterio libre del agente: 🔴 = lista cerrada de 8 causas (las 6 previas + 2 nuevas: cambiar comportamiento aprobado en el SPEC, modificar alcance del SPEC). (2) **Bitácora versionada** append-only por proyecto de cliente (`BITACORA.md`, schema fijo, plantilla en `clientes/_plantilla/`); las decisiones de fábrica siguen en este archivo. (3) **Hook de cierre** en `.claude/settings.json` + `scripts/check-bitacora.ps1` en **modo aviso** (nunca bloquea, try/catch + exit 0): recuerda registrar si se tocaron archivos de comportamiento sin anotar. `nuevo-proyecto.ps1` copia bitácora + hook a cada cliente nuevo, así el aviso también corre en las sesiones de proyecto.
+
+**Contexto**: José pierde el hilo de qué cambió y por qué a lo largo de semanas; quería conciencia sin perder autonomía. Reconciliación con la reestructura: la bitácora vive en la carpeta externa del cliente (no en `clientes/<slug>/` del repo), y el hook se auto-detecta cliente/fábrica.
+
+**Descartado**: (a) hook que **bloquea** el cierre — frustra sesiones de exploración; en v1 solo avisa fuerte, se sube a bloqueo si el aviso se ignora en la práctica; (b) trazabilidad automática completa (loguear cada cambio) — infraestructura para mantener en Windows antes del primer peso; el semáforo + bitácora entrega conciencia, que es lo que José pidió, no detección. Pendiente para v2: correr la suite MOCK en el hook para detección real de regresión (Open Question del diseño).

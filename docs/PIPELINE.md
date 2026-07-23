@@ -4,6 +4,8 @@ Flujo completo de un pedido, de la frase del cliente al producto entregado. Cada
 
 **Dónde vive el proyecto.** Los proyectos NO viven dentro de este repo. Cada uno nace en una carpeta externa por cliente (ver `CLAUDE.md` → "Dónde viven los proyectos"). En este documento `<RUTA_PROYECTO>` es la ruta absoluta de la carpeta del proyecto (ej. `C:\Users\Adela\clientes\taller-lucas\orden-trabajo\`). El orquestador la crea con `nuevo-proyecto.ps1` y **se la pasa a cada subagente**; ningún subagente la asume ni usa el directorio actual.
 
+**Semáforo y bitácora (protocolo anti-amnesia).** Cada cambio de fase se clasifica en un nivel de semáforo (ver `CLAUDE.md` → "Semáforo de cambios"). Las fases que **cambian comportamiento** — Spec (define/cambia casos de uso), Arquitectura (base, proveedor, schema) y Build — son 🟡 y dejan una entrada en la `BITACORA.md` del cliente (nivel completo, `[🟡 PENDIENTE]`). Cambiar un comportamiento ya aprobado o el alcance del SPEC es 🔴 (me detengo, causas 7 y 8). Las decisiones de la fase 3 siguen yendo además a `docs/DECISIONES.md`.
+
 ## Fase 0 — Clasificación de línea (orquestador)
 
 Antes de cualquier otra cosa, decidir en qué **línea de producción** entra el pedido. Cuatro preguntas, en orden:

@@ -123,7 +123,35 @@ node_modules/
 "@
     Set-Content -Path (Join-Path $clienteDir 'CLIENTE.md') -Value $clienteMd -Encoding utf8
 
-    Write-Host "Cliente nuevo creado: $clienteDir (git init + .gitignore + CLIENTE.md)" -ForegroundColor Green
+    # Bitácora del cliente (protocolo anti-amnesia) + hook de aviso, copiados de la fábrica.
+    $tplBitacora = Join-Path $PSScriptRoot 'clientes\_plantilla\BITACORA.md'
+    if (Test-Path -LiteralPath $tplBitacora) {
+        (Get-Content -Raw $tplBitacora) -replace '<nombre del proyecto>', $Cliente |
+            Set-Content -Path (Join-Path $clienteDir 'BITACORA.md') -Encoding utf8
+    }
+    New-Item -ItemType Directory -Path (Join-Path $clienteDir '.claude') | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $clienteDir 'scripts') | Out-Null
+    $tplCheck = Join-Path $PSScriptRoot 'scripts\check-bitacora.ps1'
+    if (Test-Path -LiteralPath $tplCheck) {
+        Copy-Item -LiteralPath $tplCheck -Destination (Join-Path $clienteDir 'scripts\check-bitacora.ps1')
+    }
+    $settings = @'
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-bitacora.ps1" }
+        ]
+      }
+    ]
+  }
+}
+'@
+    Set-Content -Path (Join-Path $clienteDir '.claude\settings.json') -Value $settings -Encoding utf8
+
+    Write-Host "Cliente nuevo creado: $clienteDir (git init + .gitignore + CLIENTE.md + BITACORA.md + hook anti-amnesia)" -ForegroundColor Green
 }
 else {
     Write-Host "Cliente existente: $clienteDir (reuso su carpeta y su git)" -ForegroundColor Green

@@ -19,6 +19,10 @@ SOLO consultas a José para:
 4. Cualquier comunicación directa con el cliente.
 5. Borrar o sobreescribir trabajo ya entregado.
 6. Aplicar cambios a un agente ya armado y en uso (modo mejora) — siempre con propuesta aprobada primero.
+7. **Cambiar o eliminar un comportamiento del agente ya aprobado por José** (registrado como aprobado en el SPEC). Ataca la regresión intencional: lo que ya pasó por el ojo de José no se pisa sin avisar.
+8. **Modificar el alcance del SPEC** (agregar o quitar un caso de uso). Ataca la deriva de alcance: el agente no crece con capacidades que nadie decidió.
+
+Las causas 1-8 son el nivel 🔴 del semáforo de cambios (ver abajo).
 
 ## Pipeline
 
@@ -83,3 +87,16 @@ Este repo (`fabrica__agentes/`) guarda **solo la maquinaria**: pipeline, líneas
 - Runtime de agentes de cliente: **jamás asumir la API de Anthropic por defecto**. Elegir proveedor según `docs/ARQUITECTURA.md`; Anthropic solo si el cliente lo paga explícitamente.
 - Español para todo lo del negocio; el código sigue el estilo y nombres en español de chaski-agentes.
 - Nunca subir `.env` ni claves a git ni a Notion.
+
+## Semáforo de cambios (protocolo anti-amnesia)
+
+Objetivo: que José sea **consciente** de las decisiones sin frenar tu autonomía. No es control previo, es conciencia posterior con un único freno duro para lo irreversible. El nivel de un cambio **no es criterio libre tuyo**: está definido por esta lista.
+
+- 🟢 **Verde — sigo y anoto una línea.** Cambios de rutina que no alteran el comportamiento observable del agente ni toman decisiones de negocio (refactor interno, textos de demo, formato, dependencias). Una línea en la bitácora. José no necesita leerlo.
+- 🟡 **Amarillo — sigo, pero queda PENDIENTE DE LECTURA.** Cambios que alteran el comportamiento del agente o toman una decisión de arquitectura/negocio no trivial (nuevo prompt, nueva tool, cambio de proveedor LLM, cambio de schema, elección de base a clonar, nueva ficha de catálogo). Entrada completa en la bitácora con encabezado `[🟡 PENDIENTE]`. Sigues; José lo lee cuando quiera y lo marca `[🟡 LEÍDO]`.
+- 🔴 **Rojo — me detengo y pregunto.** Las 8 causas de "SOLO consultas a José" (arriba). Lista cerrada, no criterio tuyo.
+
+**Dónde se anota.**
+- Cambios a un **agente/proyecto de cliente** → `BITACORA.md` de la carpeta del proyecto (append-only, versionado en su git). Plantilla en `clientes/_plantilla/BITACORA.md`.
+- Cambios a la **maquinaria de la fábrica** (esta constitución, pipeline, líneas, subagentes, skill) → `docs/DECISIONES.md` (ya versionado acá).
+- Un **hook de cierre** (`.claude/settings.json` + `scripts/check-bitacora.ps1`, modo aviso) recuerda registrar si se tocaron archivos de comportamiento sin anotar. No bloquea: avisa.
