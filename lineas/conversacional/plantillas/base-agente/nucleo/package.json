@@ -1,0 +1,22 @@
+{
+  "name": "nucleo-conversacional",
+  "version": "1.0.0",
+  "description": "Núcleo compartido de los agentes conversacionales de la Fábrica. No se instala directo: se sincroniza a cada proyecto con scripts/sincronizar-nucleo.ps1.",
+  "private": true,
+  "main": "agent/core.js",
+  "scripts": {
+    "humo": "node scripts/humo.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@supabase/supabase-js": "^2.38.0",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "node-telegram-bot-api": "^1.1.2",
+    "ws": "^8.21.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

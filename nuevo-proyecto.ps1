@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Crea de forma segura la carpeta de un proyecto de cliente FUERA del repo de la fábrica.
 
@@ -31,15 +31,21 @@
   Línea de producción: conversacional | automatizacion | a-medida.
 
 .PARAMETER RaizClientes
-  Carpeta madre donde viven todos los clientes. Por defecto C:\Users\Adela\clientes.
-  Ponerla dentro de una carpeta respaldada (ej. OneDrive) para que el trabajo entregado
-  quede respaldado — regla 5 de la constitución.
+  Carpeta madre donde viven todos los clientes. Por defecto, carpeta hermana del
+  repo de la fábrica (se calcula desde la ubicación del script, no se hardcodea
+  ningún perfil de usuario).
+  Conviene ponerla dentro de una carpeta respaldada (ej. OneDrive) para que el
+  trabajo entregado quede respaldado — regla 5 de la constitución.
 
 .EXAMPLE
   .\nuevo-proyecto.ps1 -Cliente taller-lucas -Proyecto orden-trabajo -Linea automatizacion
 
 .EXAMPLE
-  .\nuevo-proyecto.ps1 -Cliente dental-sanmartin -Proyecto bot-agenda -Linea conversacional -RaizClientes "C:\Users\Adela\OneDrive\clientes"
+  .\nuevo-proyecto.ps1 -Cliente petshop-lira -Proyecto bot-catalogo -Linea conversacional
+  Línea conversacional: además instala el núcleo + la semilla, así el proyecto arranca y responde.
+
+.EXAMPLE
+  .\nuevo-proyecto.ps1 -Cliente clinica-norte -Proyecto bot-agenda -Linea conversacional -RaizClientes "C:\Users\user\OneDrive\clientes"
 #>
 [CmdletBinding()]
 param(
@@ -48,7 +54,10 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('conversacional', 'automatizacion', 'a-medida')]
     [string]$Linea,
-    [string]$RaizClientes = 'C:\Users\Adela\clientes'
+    # Por defecto, carpeta hermana del repo de la fábrica. Se calcula desde la
+    # ubicación del script, no se hardcodea un perfil de usuario: el default
+    # anterior (C:\Users\Adela\clientes) no existía en la máquina de trabajo.
+    [string]$RaizClientes = (Join-Path (Split-Path -Parent $PSScriptRoot) 'clientes')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -167,7 +176,39 @@ else {
 New-Item -ItemType Directory -Path $proyectoDir | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $proyectoDir 'entrega') | Out-Null
 
-# 6) Ruta para el orquestador. Última línea, fácil de capturar.
+# 6) Línea conversacional: instalar núcleo + semilla para que el proyecto ARRANQUE.
+#    Antes de esto un proyecto nuevo nacía vacío y había que copiar el agente a
+#    mano desde una ruta que además no existía. Ahora sale andando.
+if ($Linea -eq 'conversacional') {
+    $agenteDir = Join-Path $proyectoDir 'agente'
+    New-Item -ItemType Directory -Path $agenteDir | Out-Null
+
+    $sync = Join-Path $PSScriptRoot 'scripts\sincronizar-nucleo.ps1'
+    if (Test-Path -LiteralPath $sync) {
+        Write-Host ""
+        Write-Host "Instalando núcleo conversacional + semilla..." -ForegroundColor Cyan
+        & $sync -Proyecto $agenteDir -Aplicar -Semilla
+
+        # package.json del cliente desde la plantilla del núcleo
+        $tpl = Join-Path $PSScriptRoot 'lineas\conversacional\plantillas\base-agente\nucleo\package.json.tpl'
+        if (Test-Path -LiteralPath $tpl) {
+            $pkg = (Get-Content -Raw -LiteralPath $tpl -Encoding UTF8).
+                Replace('{{NOMBRE}}', "agente-$Cliente-$Proyecto").
+                Replace('{{DESCRIPCION}}', "Agente conversacional de $Cliente ($Proyecto)")
+            # UTF-8 SIN BOM a propósito: Out-File -Encoding utf8 en PS 5.1 escribe
+            # BOM, y un BOM en package.json rompe parsers de JSON estrictos.
+            $sinBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText((Join-Path $agenteDir 'package.json'), $pkg, $sinBom)
+        }
+
+        Write-Host "  Núcleo instalado. Verifica cuando quieras con:" -ForegroundColor Gray
+        Write-Host "    $sync -Proyecto `"$agenteDir`"" -ForegroundColor Gray
+    } else {
+        Write-Host "AVISO: no encontré scripts\sincronizar-nucleo.ps1 — el proyecto queda sin núcleo." -ForegroundColor Yellow
+    }
+}
+
+# 7) Ruta para el orquestador. Última línea, fácil de capturar.
 Write-Host ""
 Write-Host "Proyecto listo. Línea: $Linea" -ForegroundColor Green
 Write-Host "RUTA_PROYECTO=$proyectoDir"

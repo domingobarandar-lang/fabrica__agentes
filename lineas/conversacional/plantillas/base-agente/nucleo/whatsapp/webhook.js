@@ -70,7 +70,13 @@ router.post('/', (req, res) => {
 
   markAsRead(messageId).catch(() => {});
 
-  processMessage(telefono, texto)
+  // `respuesta` puede ser null (handoff humano activo, o turno fusionado por el
+  // buffer). No hay if acá a propósito: el guarda vive dentro de sendMessage,
+  // que es código del núcleo. Un guarda en cada canal es un guarda que alguien
+  // olvida.
+  processMessage(telefono, texto, {
+    onProgreso: (puente) => sendMessage(telefono, puente).catch(() => {}),
+  })
     .then((respuesta) => sendMessage(telefono, respuesta))
     .catch((err) => {
       console.error('[Webhook] Error procesando mensaje:', err.message);

@@ -1,7 +1,7 @@
 {
-  "name": "agente-citas-whatsapp",
+  "name": "{{NOMBRE}}",
   "version": "0.1.0",
-  "description": "Agente WhatsApp genérico de reservas de horas + catálogo (dentistas, restaurantes, servicios) — demo/MVP",
+  "description": "{{DESCRIPCION}}",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

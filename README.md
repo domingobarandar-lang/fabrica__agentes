@@ -44,8 +44,8 @@ fabrica__agentes/
 │   └── DECISIONES.md       # Registro de decisiones (espejo en Notion)
 ├── secrets/                # Pool de credenciales (ignorado por git)
 └── clientes/
-    ├── _plantilla/         # Plantilla de BRIEF (el índice real vive en Notion)
-    └── <marcha-blanca>/    # dental-sanmartin, inmobiliaria-demo (se quedan; los NUEVOS nacen afuera)
+    └── _plantilla/         # Plantillas de BRIEF y BITÁCORA (el índice real vive en Notion)
+                            # NINGÚN proyecto de cliente vive acá: todos nacen afuera
 ```
 
 ## Base tecnológica

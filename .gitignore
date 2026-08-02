@@ -9,3 +9,7 @@ node_modules/
 
 # Datos de runtime de apps de clientes
 clientes/*/app/data/
+
+# Overlay temporal que arma la prueba de humo del núcleo (se borra solo;
+# esto es la red por si una corrida se cae a mitad)
+lineas/conversacional/plantillas/base-agente/nucleo/.probar/

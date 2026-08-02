@@ -157,3 +157,197 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 **Contexto**: José pierde el hilo de qué cambió y por qué a lo largo de semanas; quería conciencia sin perder autonomía. Reconciliación con la reestructura: la bitácora vive en la carpeta externa del cliente (no en `clientes/<slug>/` del repo), y el hook se auto-detecta cliente/fábrica.
 
 **Descartado**: (a) hook que **bloquea** el cierre — frustra sesiones de exploración; en v1 solo avisa fuerte, se sube a bloqueo si el aviso se ignora en la práctica; (b) trazabilidad automática completa (loguear cada cambio) — infraestructura para mantener en Windows antes del primer peso; el semáforo + bitácora entrega conciencia, que es lo que José pidió, no detección. Pendiente para v2: correr la suite MOCK en el hook para detección real de regresión (Open Question del diseño).
+
+## 2026-07-30 — Auditoría de la DIRECTIVA de arquitectura: diagnóstico y reordenamiento propuesto [🟡 PENDIENTE]
+
+**Estado**: **propuesta, NO aplicada. Cero cambios de código en esta sesión.** Sesión de `/gstack-office-hours` cortada antes de elegir alternativa de implementación; se retoma el 2026-07-31.
+
+**Contexto**: José entregó `DIRECTIVA-ARQUITECTURA-FABRICA-AGENTES.md` (Avenida Chanski v1.0). Investiga a Vambe (2.000 clientes, ~8 agentes hiperespecializados por cliente, conocimiento en carpetas cargadas just-in-time, meta-agente de configuración) y a Nexor (agentes de voz con capas de razonamiento, coordinación y memoria), cita el paper de Anthropic sobre context engineering, y ordena ejecutar 14 reglas de auditoría A-01 a A-14 más un contrato de `client.config.json`. Meta del cliente: negocio con clientes pagando; hoy hay un piloto gratis con propuesta comercial enviada y contrato en preparación.
+
+**Auditoría del disco (no de lo declarado)** — estado real por regla:
+
+- **A-02 agente monolítico**: se cumple el diagnóstico. `agent/core.js` maneja todo el ciclo con un solo system prompt en `agent/prompts.js`.
+- **A-03 conocimiento monolítico**: parcial. `info_corredora` y `ver_horarios` ya son tools; no hay carpetas por intención ni `_index.json`.
+- **A-04 datos por prompt**: **YA CUMPLE**. Catálogo, disponibilidad e info entran por tool con filtros. La directiva asume roto algo que funciona.
+- **A-05 estado en historial**: parcial. Existe tabla `leads` con columnas tipadas (`database/schema.sql`), pero el agente no recibe bloque "ya sabes / te falta" y re-deriva del historial.
+- **A-06 historial sin límite**: parcial. Ventana de 30 mensajes en `agent/memory.js`; sin compactación.
+- **A-07 buffer + lock**: el **lock ya existe** (cola serial por teléfono, `core.js`). Falta el buffer de agrupación (~8 s).
+- **A-08 timeout/retry**: el **retry con backoff ya existe**. Falta `AbortController` con timeout duro.
+- **A-09 handoff humano**: **CERO**. `modo_humano` no aparece en ningún archivo del repo.
+- **A-10 métricas**: **CERO**. No hay tabla de métricas.
+- **A-11 evals**: **CERO**. No existe carpeta `evals/`.
+- **A-12 `client.config.json`**: **CERO**. El archivo no existe en ninguna parte del repo.
+- **A-13 workflows / A-14 feature flags**: no aplican todavía (no hay automatizaciones ni compensaciones de modelo hardcodeadas).
+- La directiva manda auditar `FABRICA-AGENTES-BLUEPRINT.md` y `PLAN-EJECUCION-FABRICA.md` (A-01): **ninguno de los dos existe en este repo**. Fue escrita contra otro estado del proyecto.
+
+**Hallazgo principal, y NO está en la directiva**: `agent/core.js` y `agent/llm.js` son **byte-idénticos** entre `dental-sanmartin` e `inmobiliaria-demo` (verificado con `diff`). La personalización real hoy es clonar la carpeta completa y editar solo `prompts.js` + `tools.js`. Con dos clientes no duele; con el tercero entrando por contrato, cada bug del core se arregla N veces a mano.
+
+**Hallazgo operativo**: la plantilla base oficial `C:\Users\Adela\chaski-agentes\` **no es accesible** desde la máquina actual (`C:\Users\user\`). Hoy la fábrica no puede clonar su propia base; la plantilla de facto es `clientes/inmobiliaria-demo/agente/`.
+
+**Reordenamiento propuesto (7 premisas, pendientes del OK de José)**:
+
+1. **P1** — El cuello de botella #1 es el fork de código por cliente, no la especialización del agente.
+2. **P2** — La Parte 4 de la directiva se traduce, no se aplica literal: propone carpetas en inglés (`agents/`, `clients/`, `evals/`, `workflows/`) y clientes **dentro** del repo, contra dos reglas duras de `CLAUDE.md` (español en el código; ningún proyecto de cliente dentro de `fabrica__agentes/`). Se adopta el contrato, se rechazan nomenclatura y ubicación.
+3. **P3** — Los evals son precondición, y se escriben **primero contra el comportamiento actual** (caracterización) antes de refactorizar. Al revés solo validan el código nuevo y no avisan de la regresión.
+4. **P4** — A-09 (handoff) y A-07 (buffer) son bugs de producción, no mejoras de arquitectura, y van antes que cualquier refactor.
+5. **P5** — A-02 (partir en cinco agentes) es la **última** fase, no la primera. Se activa por config (`flujos[].agentes`), no como reescritura del core.
+6. **P6** — Falta el **canal de distribución del core compartido** (npm privado, submódulo git o script de sincronización versionado). Sin eso, "core compartido" es un deseo: cada cliente sigue siendo una copia y la config no arregla nada. La directiva da esto por hecho y no está.
+7. **P7** — El origen de clonado oficial está roto (ver hallazgo operativo): se restaura el acceso o se oficializa la plantilla que sí existe.
+
+**EUREKA registrado**: la arquitectura de Vambe (8 agentes por cliente) es **consecuencia** de tener 2.000 clientes, no la causa de haberlos conseguido. Copiarla antes de tener la escala multiplica el problema del fork en vez de resolverlo: partir el agente en cinco sin resolver la duplicación deja cinco archivos duplicados por cliente en vez de uno. De ahí el reordenamiento: **A-12 (config) y A-11 (evals) son la base; A-02 es consecuencia.**
+
+**Alcance**: la directiva aplica solo a `lineas/conversacional/`. La línea de automatización no tiene plantilla construida (`base-proceso/` solo tiene README) — no hay nada que auditar ahí y meterla ahora rompería la regla de que las líneas no se mezclan.
+
+**Pendiente para la próxima sesión (2026-07-31)**:
+- Confirmar o corregir las 7 premisas con José (gate).
+- Generar las 3 alternativas de implementación — se diferencian en **secuencia y tamaño de paso**, no en alcance: José pidió los cuatro dolores (fork, evals, bugs de producción, multi-agente), así que el alcance es completo.
+- Elegir alternativa y recién ahí escribir el diseño.
+- Decidir P6 (mecanismo de distribución del core), que es la pieza que la directiva no cubre.
+
+**Descartado en esta sesión**: (a) aplicar A-01..A-14 en el orden de la directiva — pone el refactor multi-agente antes de la red de seguridad, con contrato en preparación; (b) segunda opinión de otro modelo (Codex no está instalado; el subagente de Claude lo canceló José); (c) búsqueda web de paisaje competitivo — la directiva **ya es** la investigación de paisaje, con fuentes en su apéndice, y buscar de nuevo mandaría términos del negocio afuera sin aportar nada.
+
+## 2026-07-31 — Núcleo compartido: enfoque elegido, canal de distribución y plantilla oficial [🟡 PENDIENTE]
+
+**Decisión (gate de premisas con José)**: se adopta el **enfoque A — "núcleo mínimo primero, sangre encima"**. Las 7 premisas del 2026-07-30 quedan confirmadas. Secuencia: paso 0 medir la red → 1a extraer el núcleo al repo (🟡) → 1b sincronizar sobre clientes (🔴) → 2 bugs de producción (handoff, buffer, timeout) → 3 reconciliar el arnés de evals → 4 `agente.config.json` + validador → 5 conocimiento por carpetas + métricas → 6 multi-agente por config. Documento de diseño completo en `~/.gstack/projects/domingobarandar-lang-fabrica__agentes/user-main-design-20260731-062404.md`.
+
+**Descartado**: (a) **enfoque B, directiva literal** — reescribe `core.js` (147 líneas probadas) antes de tener evals ni handoff, con contrato en preparación, y deja el fork sin resolver hasta el final; (b) **enfoque C, el tercer cliente es el molde** — deja el handoff en cero en los dos agentes que ya atienden gente. C queda como **plan de respaldo automático** si José resuelve que marcha blanca cuenta como "entregado" (ver Pendiente).
+
+**P6 resuelto — canal de distribución del núcleo**: `scripts/sincronizar-nucleo.ps1`. Modo `-Verificar` por defecto (recalcula SHA256 por archivo sobre disco, nunca confía en lo estampado), escribe solo con `-Aplicar`, aborta ante divergencia local salvo `-Forzar` con respaldo previo, e inventario con `-Todos` sobre la raíz de clientes. Precisión respecto del diagnóstico previo: **ya existía un mecanismo primitivo** (`base-agente/llm.js` se copia a mano sobre `agent/llm.js`, referenciado en `CLAUDE.md:66`); lo que faltaba no era el concepto sino la **contabilidad** (versión, verificación, inventario).
+
+**Descartado para P6**: (a) **npm privado** (GitHub Packages) — exige PAT con `read:packages` en cada repo de cliente y en Railway; credencial nueva = 🔴. Es la opción correcta a largo plazo: **disparador documentado para migrar, el cuarto cliente**; (b) **submódulo git** — el repo del cliente necesitaría acceso al repo privado de la fábrica para deployar, más fricción de submódulos en Windows + Railway.
+
+**P7 resuelto — plantilla oficial**: se oficializa `lineas/conversacional/plantillas/base-agente/nucleo/` y se reescribe su README sin la ruta muerta a `C:\Users\Adela\chaski-agentes\`. `base-agente/llm.js` **se absorbe al núcleo, no se duplica**, y se actualiza la referencia de `CLAUDE.md:66`. Se agrega `nucleo/ejemplo/` (prompts, tools, supabase en memoria, index mínimos) porque los 5 archivos del núcleo tienen `require` colgando (`core.js:7-8` pide `./prompts` y `./tools`; `memory.js:5` pide `../database/supabase`) y sin ejemplo el núcleo no se puede instalar, correr ni testear. También se corrige `nuevo-proyecto.ps1:51`, cuyo default `$RaizClientes = 'C:\Users\Adela\clientes'` tiene el mismo defecto.
+
+**Bugs encontrados en la revisión adversarial del diseño, verificados contra el disco** (no estaban en la directiva ni en la auditoría del 2026-07-30):
+
+- 🔴 **Fuga de QA en dental**: `clientes/dental-sanmartin/agente/scripts/test-chat.js:21` usa `MODO_MOCK = process.env.MOCK === 'true' || !process.env.ANTHROPIC_API_KEY`. Con `ANTHROPIC_API_KEY` en `.env`, **`npm test` llama a la API real** — viola la regla dura "cero efectos externos en QA". Inmobiliaria tiene `const MODO_MOCK = true` incondicional. **Se cierra en el paso 2.** Corrige la afirmación del 2026-07-30 de que el arnés era 100% mock en ambos: era cierto solo para inmobiliaria.
+- 🔴 **El handoff estaba diseñado en el canal equivocado**: la v1 del diseño lo anclaba en `whatsapp/webhook.js`, pero el `railway.toml` de **ambos** clientes tiene `startCommand = "node telegram/bot.js"` y la demo de inmobiliaria corre por terminal. No habría llegado a ningún usuario real. **Se mueve a `processMessage` de `agent/core.js`**, punto donde convergen los tres canales (`webhook.js:73`, `bot.js:129`, `chat-local.js:42`).
+- 🟡 **`railway.toml` sale del núcleo**: su `startCommand` es una decisión de canal por cliente; sincronizarlo pisaría a un cliente que despliegue por WhatsApp. Se genera desde `agente.config.json` en el paso 4.
+- 🟡 **Restricción 5 incumplida en dental**: su `.env.example` documenta `ANTHROPIC_*` y no las `LLM_*`; el adapter cae a `LLM_PROVIDER || 'anthropic'` (`llm.js:142`). Se corrige en el paso 2.
+- 🟡 **Ningún cliente tiene `BITACORA.md`** pese a que el semáforo las exige y la plantilla existe. Se crean en el paso 0.
+- 🟡 **Tokens de Telegram divergentes** (`TELEGRAM_TOKEN_CITAS` vs `TELEGRAM_TOKEN_INMOBILIARIA`) y **tablas de sesión divergentes** (`citas_sesiones` vs `inmobiliaria_sesiones`). Se resuelven por config (`canales.telegram.token_env`, `datos.tabla_sesiones`) sin renombrar variables en agentes en uso.
+
+**Alcance de absorción al núcleo, fijado por adelantado** (para no dejarlo abierto "hasta abrir el archivo"): de `database/supabase.js` se absorbe **solo** conexión, fallback en memoria y `sesiones` + `estado_canal`; los repositorios de dominio (`propiedades`, `visitas`, `citas`, `catalogo`, `horarios`) se quedan en el cliente porque son el modelo de datos del vertical. De `telegram/bot.js` se extraen **primero** las ~150 líneas de guiones de demo con tool calls hacia `scripts/` del cliente.
+
+**Deuda aceptada a propósito**: el handoff del paso 2 necesita persistencia y la capa de datos está forkeada. En vez de bloquear el paso 2 detrás del paso 4, se usa una tabla nueva `estado_canal` con ~20 líneas de accessor aplicadas **a mano en los dos clientes**, absorbidas después en el paso 4. Veinte líneas duplicadas una vez cuestan menos que dejar el handoff en cero con un contrato en preparación.
+
+**Pendiente 🔴 para José, bloquea el paso 1b**: **¿marcha blanca cuenta como "entregado"?** `CLAUDE.md` dice "lo entregado sale del alcance de la fábrica… no hay migración de lo ya entregado", y los pasos 1b, 2 y 4 son exactamente una migración de los dos agentes existentes (`inmobiliaria-demo` ya tiene carpeta `entrega/`). La propuesta es **marcha blanca ≠ entregado**: un piloto gratis sin contrato firmado sigue bajo alcance de fábrica. Si José resuelve lo contrario, el plan degrada al enfoque C. Además, el script de sincronización sobreescribe archivos de agentes en piloto, lo que activa la **causa 5** del semáforo (sobreescribir trabajo entregado), no solo la causa 6.
+
+**Otros pendientes 🔴**: inbox humano del handoff — Chatwoot implica costo o cuenta nueva; alternativa sin costo para v1, reenviar a un chat de Telegram del dueño. Y el juez LLM del sistema de evals queda **fuera de la v1** por la misma razón (gasta tokens).
+
+**Hallazgos de la segunda ronda de revisión adversarial** (el diseño pasó de 6/10 a 8/10; todos verificados contra el disco):
+
+- 🔴 **La tabla del handoff debe ir prefijada por cliente.** `clientes/dental-sanmartin/agente/.env.example:13-16` declara que el proyecto Supabase está **COMPARTIDO** entre agentes ("Ambos agentes usan el MISMO proyecto Supabase: mismo `SUPABASE_URL` y misma `SUPABASE_ANON_KEY`"), y por eso las tablas de sesión ya van prefijadas. Una tabla `estado_canal` sin prefijo la compartirían todos los agentes del proyecto: el `modo_humano` de un cliente de la dental apagaría el bot de otro agente si coinciden los `canal_id`. Va `citas_estado_canal` / `inmobiliaria_estado_canal`, más `datos.tabla_estado_canal` en el contrato de config v1.
+- 🔴 **El mecanismo del handoff se rediseñó por su modo de falla.** La v2 usaba un "centinela" de texto que cada adaptador debía interpretar como no-enviar. Si un adaptador olvidaba el guarda, le mandaba la cadena literal al cliente final **justo durante un handoff**, y el arnés no lo detectaba porque `test-chat.js:678` llama `processMessage` directo sin pasar por `bot.js`. Ahora: `processMessage` resuelve a **`null`**, y **`nucleo/telegram/enviar.js` (~15 líneas) sube al núcleo en el paso 2** para que el guarda viva en código sincronizado. Así los dos canales que ven usuarios reales (WhatsApp vía `sender.js`, Telegram vía `enviar.js`) quedan protegidos por el núcleo.
+- 🟡 **Son 4 sitios de llamada a `processMessage` por cliente, no 3**, y las líneas difieren entre clientes: `webhook.js:73` (ambos), `telegram/bot.js` real (dental 120, inmobiliaria 129), `telegram/bot.js` demo mock (299 / 329) y `scripts/chat-local.js` (27 / 42). La deuda del paso 2 se recalculó de "~20 líneas en un archivo" a **~70-90 líneas en dos archivos por cliente**.
+- 🟡 **`nucleo/ejemplo/` es un overlay, no una carpeta hermana.** `core.js:7-8` hace `require('./prompts')`, que resuelve dentro de `nucleo/agent/`; un `ejemplo/` al lado nunca resuelve. `MANIFIESTO.json` lo declara como capa superpuesta y el verificador arma núcleo+ejemplo en un temporal — el mismo mecanismo que el sync sobre un cliente real, así que el manifiesto se valida a sí mismo. `ejemplo/` es además la **semilla** que deposita `nuevo-proyecto.ps1`, para que un proyecto nuevo arranque y responda.
+- 🟡 **El paso 1a necesita `nucleo/scripts/humo.js`**: sin él no tenía nada que correr (el arnés vive en `scripts/test-chat.js` de cada cliente y el motor extraído llega recién en el paso 3). Inyecta un doble del LLM con `_setClienteParaTests` (`core.js:17`) y verifica tres cosas, una de ellas que el modo humano devuelve `null`.
+- 🟢 **`name` del `package.json` del núcleo va fijo** (`nucleo-conversacional`): un marcador `{{NOMBRE}}` no es URL-safe y haría fallar `npm install`. La plantilla del cliente va aparte en `package.json.tpl`. **`.gitignore` sí vuelve al núcleo**: es byte-idéntico y es lo que mantiene `.env` fuera del repo de cada cliente.
+
+**Hallazgo de la tercera ronda (el diseño cerró en 9/10) — vale para cualquier caso de "no responder", no solo el handoff**: en los agentes chaski **no se puede suprimir una respuesta devolviendo `null`**. `whatsapp/sender.js:58` hace `if (!texto) return [''];`, así que `sendMessage(telefono, null)` postea `text: { body: '' }`, Meta responde 400, y el `.catch` de `webhook.js:75-78` dispara **`sendMessage(telefono, MENSAJE_ERROR)`** — el cliente recibe "estoy teniendo problemas técnicos" justo cuando pidió hablar con una persona. Telegram tiene el mismo camino (`bot.js:50-51` es otra copia de `dividirMensaje` con el mismo `if (!texto)`, y el `catch` de `bot.js:123-126` también manda `MENSAJE_ERROR`). **Para no responder hay que agregar un guarda explícito** (`if (texto == null) return;`) en `sender.js` y en el envío de Telegram; el valor de retorno solo no alcanza. Aplica también a rate limit, ventana de 24h de WhatsApp y cualquier silencio futuro. Consecuencia para el plan: el paso 2 toca `sender.js` además de `core.js`, el handoff se sincroniza **apagado** (`HANDOFF_ACTIVO=false`) para no dejar una ventana entre sincronizar y editar los `bot.js`, y `dividirMensaje` se extrae a `nucleo/lib/texto.js` en vez de generar una cuarta copia (hoy existe idéntico en `sender.js:58-72` y `bot.js:50-63`).
+
+**GIRO: el plan cambió de enfoque A a enfoque C — ver la entrada siguiente (2026-07-31, borrado de los dos agentes).** Todo lo de arriba queda como registro de auditoría y de por qué se decidió lo que se decidió; el plan de ejecución vigente es el de la entrada siguiente.
+
+**El argumento de "marcha blanca ≠ entregado" ya no es interpretación.** `docs/FLUJO-COMERCIAL.md:49` pone "Marcha blanca (1 semana)" en el **paso 11, Etapa D**, y `:55` pone "Entrega formal" en el **paso 12, Etapa E**. Marcha blanca es anterior a la entrega por definición del propio flujo, así que "lo entregado" del paso 13 se refiere a lo que ya pasó por el 12. Además `CLAUDE.md:77` llama a los dos proyectos, textual, "dos proyectos **en marcha blanca**". El `entrega/` de inmobiliaria deja de ser contraevidencia: es el kit producido por la fase del pipeline, no prueba de que la capacitación del paso 12 haya ocurrido. **Sigue requiriendo el OK de José**, pero con evidencia documental en vez de criterio.
+
+## 2026-07-31 — Se eliminan dental-sanmartin e inmobiliaria-demo: la fábrica pasa al enfoque C [🔴 AUTORIZADO POR JOSÉ]
+
+**Decisión de José, consultada explícitamente antes de ejecutar**: se eliminan del repo los dos proyectos en marcha blanca (`clientes/dental-sanmartin`, `clientes/inmobiliaria-demo`). Con eso la fábrica **abandona el enfoque A** ("núcleo mínimo primero, sangre encima", que operaba sobre los dos agentes existentes) y **adopta el enfoque C**: el molde se construye en el repo y se valida con el próximo cliente real.
+
+**Causa 🔴 nº 5 del semáforo** (borrar trabajo ya entregado). Se planteó la consulta con las cuatro opciones y sus consecuencias; José eligió borrar ahora sabiendo que equivale a cambiar de enfoque.
+
+**Objeción que se levantó antes de ejecutar, y su resolución**: se advirtió que (a) el repo llamaba a estos proyectos "en marcha blanca", no "de prueba", y que `FLUJO-COMERCIAL.md:49` define marcha blanca como el bot corriendo en paralelo con la atención humana de un cliente real; (b) eran la única fuente del núcleo, porque la base oficial `C:\Users\Adela\chaski-agentes\` es inaccesible desde esta máquina; (c) no estaba resuelto cuál de los dos era el piloto con contrato en preparación. José reafirmó la decisión. Se ejecutó.
+
+**Cómo se ejecutó, y cómo se deshace**: `git rm -r` sobre las dos carpetas (50 archivos). **El borrado quedó preparado en git pero NO commiteado**, para que revertirlo sea un comando y no una arqueología. Nada se perdió de verdad: todo estaba commiteado, no había `.env` reales ni `node_modules`.
+- Deshacer completo: `git restore --staged --worktree clientes/`
+- Recuperar un archivo puntual después de commitear: `git show ade8903:clientes/inmobiliaria-demo/agente/agent/core.js`
+- Commit de respaldo con todo el contenido: **`ade8903`**
+
+**Qué cambia en el plan (y lo simplifica bastante).** Desaparecen las partes más feas del enfoque A:
+- **Se acabó el bloqueo 🔴 de "marcha blanca vs entregado"** — la pregunta quedó sin objeto, no hay agentes en uso que tocar.
+- **Se acaba la deuda de ~90 líneas duplicadas** del accessor de `estado_canal`: el handoff se escribe **una vez, dentro del núcleo**, en vez de parcharse a mano en dos clientes.
+- **Se acaba la reconciliación de dos arneses divergidos**: se toma la versión buena (la de inmobiliaria, mock incondicional y 18 escenarios CU/ADV) desde `ade8903` y se generaliza. La versión con fuga de tokens de dental simplemente no viaja.
+- **Se acaba el baile de "sincronizar apagado y encender por cliente"**: no hay clientes que sincronizar todavía.
+- **El guarda de `null` en `sender.js` se escribe bien de entrada** en vez de retrofitearse.
+
+**Qué se pierde**: los bugs de producción ya no se arreglan donde hay tráfico real — se arreglan en el molde y se validan con el próximo cliente. Y todo el código de partida hay que sacarlo del historial de git en vez de tenerlo en el árbol de trabajo.
+
+**Actualizaciones de coherencia hechas en la misma sesión** (🟡): `CLAUDE.md` — la "excepción histórica" de los dos proyectos dentro de `clientes/` se elimina; la regla "ningún proyecto de cliente vive en el repo" queda **sin casos especiales**. `README.md` — el árbol de carpetas ya no los lista.
+
+**Plan de ejecución vigente**, en `~/.gstack/projects/domingobarandar-lang-fabrica__agentes/user-main-design-20260731-062404.md` (v5): (1) construir el núcleo en `lineas/conversacional/plantillas/base-agente/` extrayendo desde `ade8903`, con ejemplo ejecutable, prueba de humo y script de sincronización; (2) escribir los bugs de producción **dentro** del núcleo — handoff con guarda en el envío, agrupación de mensajes, timeout, métricas; (3) generalizar el arnés de evals con los 8 perfiles base; (4) `agente.config.json` + validador; (5) conocimiento por carpetas; (6) multi-agente por config si las métricas lo justifican. El primer cliente real valida el molde entero.
+
+## 2026-08-01 — Paso 1 ejecutado: el núcleo conversacional existe y se verifica solo [🟡 PENDIENTE]
+
+**Decisión / entrega**: se construyó el núcleo compartido de la línea conversacional dentro del repo. **Por primera vez la fábrica puede ejecutar su propio paso 1 de Build**: hasta hoy el README de la plantilla mandaba clonar desde `C:\Users\Adela\chaski-agentes\`, ruta inaccesible desde la máquina de trabajo. Todo verificado corriendo, no solo escrito.
+
+**Qué quedó construido** (`lineas/conversacional/plantillas/base-agente/`):
+- `nucleo/` — los 5 archivos que eran byte-idénticos entre los agentes borrados (`agent/core.js` 147, `agent/llm.js` 153, `agent/memory.js` 42, `whatsapp/webhook.js` 95, `whatsapp/sender.js` 74), más `nixpacks.toml`, `.gitignore`, `package.json` y `package.json.tpl`. Rescatados del commit `ade8903` y verificados byte a byte con `cmp` contra el original.
+- `ejemplo/` — semilla con doble rol: overlay para la prueba de humo, y punto de partida de un cliente nuevo. `prompts.js`, `tools.js` (una tool con tope y `sin_match_exacto`), `database/supabase.js` (solo memoria, con el contrato `sesiones` + `estadoCanal` que el núcleo exige), `index.js` y `telegram/bot.js`.
+- `MANIFIESTO.json` — mapa origen→destino, con la capa `nunca_tocar`. Única fuente de verdad de qué viaja y adónde. Lo consumen tanto la prueba de humo como el sincronizador, así que **el manifiesto se valida a sí mismo** antes de usarse contra un proyecto real.
+- `VERSION` — 1.0.0.
+- `nucleo/scripts/humo.js` — **11/11 en verde**. Arma el overlay, inyecta un doble del LLM con `_setClienteParaTests` y verifica que el núcleo enciende, que el loop agéntico ejecuta la tool de verdad (el dato viaja tool → modelo → respuesta) y que la memoria persiste solo texto plano. Cero tokens, sin credenciales, sin red.
+
+**`scripts/sincronizar-nucleo.ps1` (P6) — construido y probado con casos reales, no solo escrito**:
+- Verificación por defecto: recalcula SHA256 sobre disco, nunca confía en lo estampado. Probado: **0 archivos escritos en modo verificación**.
+- Distingue **ATRASADO** (quedó atrás, nadie lo tocó — coincide con lo estampado en `NUCLEO.md`) de **DIVERGIDO** (alguien lo editó en el proyecto).
+- **Probado el caso que importa**: se editó `agent/core.js` en un proyecto, el script lo marcó DIVERGIDO, `-Aplicar` **abortó con exit 2** y el parche local sobrevivió intacto.
+- `-Forzar` respalda antes de pisar: verificado que el parche quedó en `.respaldo-nucleo-<fecha>/agent/core.js`.
+- `-Todos` da el inventario: probado con dos proyectos (uno al día 7/7, otro con 1 divergido + 1 faltante) y una carpeta que no es agente, que correctamente no aparece.
+
+**Bugs de Windows/PS 5.1 encontrados y corregidos durante la prueba** (los tres del mismo tipo: encoding):
+1. **Los `.ps1` necesitan BOM UTF-8.** Sin él, PS 5.1 los lee como ANSI y la salida sale con `NÃºcleo` en vez de `Núcleo`. Corregido en `sincronizar-nucleo.ps1` y `nuevo-proyecto.ps1`.
+2. **`Out-File -Encoding utf8` escribe CON BOM**, y un BOM en `package.json` rompe parsers de JSON estrictos. El `package.json` generado por `nuevo-proyecto.ps1` se escribe con `UTF8Encoding($false)` explícito. Verificado: primer byte `123` (`{`), y parsea.
+3. `Set-Content` en PS 5.1 escribe ANSI por defecto: `NUCLEO.md` se escribe con `Out-File -Encoding utf8` para que los acentos sobrevivan.
+
+**`nuevo-proyecto.ps1` corregido** (🟡): su default `$RaizClientes = 'C:\Users\Adela\clientes'` no existía en esta máquina — ahora se calcula desde la ubicación del script (carpeta hermana del repo), sin hardcodear ningún perfil de usuario. Y para la línea conversacional **instala núcleo + semilla**, así el proyecto nace andando. Antes creaba una carpeta vacía y el agente había que copiarlo a mano desde la ruta muerta.
+
+**Prueba de punta a punta, corriendo**: `nuevo-proyecto.ps1 -Cliente petshop-lira -Proyecto bot-catalogo -Linea conversacional` → `npm install` (130 paquetes) → `npm run telegram:mock` → **el bot arranca y responde**, cero tokens. Ese era el criterio de éxito 6 del diseño y está cumplido.
+
+**Actualizaciones de coherencia** (🟡): `CLAUDE.md` — la sección "Activos base" ya no apunta a `C:\Users\Adela\chaski-agentes\`; la plantilla del repo **es** la base, y se agregó el sincronizador como activo. La ruta del adapter LLM cambió a `nucleo/agent/llm.js` (se movió con `git mv`, así que git conserva la historia del archivo). `README.md` de la plantilla reescrito completo, con las advertencias que costaron caro: que devolver `null` no silencia al bot, que toda tabla nueva va prefijada, y que la lógica transversal va en `processMessage` y no en un canal. `.gitignore` del repo ignora el overlay temporal `.probar/`.
+
+**Lo que NO se hizo y por qué**: no se corrió la suite del agente de referencia rescatado — José interrumpió esa ejecución. El núcleo se verificó con su propia prueba de humo, que es evidencia directa de que el código funciona, pero **no se comprobó que los 18 escenarios del agente de referencia siguieran en verde**. Queda como deuda de verificación: si algo del núcleo estaba roto de antes, la prueba de humo no lo detectaría.
+
+**Siguiente**: paso 2 — handoff humano con el guarda en el envío (`nucleo/telegram/enviar.js` + guarda en `sender.js` + `lib/texto.js` compartido), agrupación de mensajes, timeout con `AbortController`, y métricas. Todo dentro del núcleo, sin gate 🔴, porque ya no hay agentes en uso.
+
+## 2026-08-01 — El agente Gesta ya resolvió parte del paso 2: se adoptan sus decisiones [🟡 PENDIENTE]
+
+**Hallazgo**: al verificar la bitácora de Notion apareció una entrada de José del 2026-07-30 que yo no había visto — *"Buffer de mensajes + auditoría de una guía externa de 9 fixes (Agente WhatsApp Gesta)"*, commits `4da45e9` y `8aec3bb`. El agente de Gesta **ya implementó, con tráfico real detrás, dos de las cuatro cosas del paso 2** de este plan. Se adoptan sus números y sus reglas en vez de los de la directiva, porque los suyos tienen uso real y los de la directiva son teóricos.
+
+**Corrección 1 — el buffer necesita lista de excepciones, y mi diseño no la tenía.** Gesta dejó escrita la regla: *"cuando un buffer agrupa mensajes, hay que preguntarse qué acción NO puede esperar; la respuesta casi siempre incluye las acciones irreversibles: pedir un humano, cancelar, pagar."* Su caso concreto: si el cliente pide una persona y el contenedor se reinicia durante la ventana de agrupación, **el cliente pidió ayuda y nadie se enteró**. Mi diseño tenía el buffer y el handoff en el mismo paso y nunca dijo que la petición de handoff lo esquiva — era un bug esperando fecha. El buffer del núcleo nace con `excepciones` en config (handoff, cancelación, adjuntos) y con un escenario del arnés que **falla el build** si alguien saca el handoff de esa lista, copiando el candado S34 de Gesta.
+
+**Corrección 2 — el default del timeout de handoff se invierte.** La directiva propone "30 min sin actividad humana → vuelve a modo bot". Gesta **evaluó exactamente esa propuesta y la rechazó como regresión grave**: ahí la derivación es DEFINITIVA y revivir al bot contradice lo que se le prometió al cliente. Nuevo default del núcleo: **`timeout_min: null`, derivación definitiva**; el retorno automático se activa por `agente.config.json` si un cliente lo pide. Razón: si el bot no vuelve, el peor caso es reactivarlo a mano; si vuelve cuando no debía, el cliente descubre que la "persona" era un bot otra vez.
+
+**Corrección 3 — los números salen de producción, no de la directiva.** Ventana del buffer: **6 s** (Gesta) en vez de 8 s (directiva). Timeout del modelo: **25 s con 3 reintentos** (Gesta) en vez de 20 s con 1 (directiva).
+
+**El patrón se repitió, y ya son dos**: José trajo `GUIA-FIXES-GESTA-BOT.md` con 9 fixes "listos para pegar", y la auditoría contra el disco encontró que **4 ya estaban implementados, 1 apuntaba a un archivo inexistente, y 2 reintroducían bugs que `CLAUDE.md` existe para prevenir** (uno de ellos, el incidente real del 27-jul). Es exactamente lo que pasó con `DIRECTIVA-ARQUITECTURA-FABRICA-AGENTES.md`: daba por roto A-04 (que funciona), daba por hecho el canal de distribución (que no existía) y mandaba auditar dos archivos inexistentes. **Regla de operación, ya no una observación**: ninguna guía o directiva externa se ejecuta sin auditarla antes contra el disco, fix por fix. En Gesta ese chequeo costó ~20 minutos y evitó reintroducir el peor bug del proyecto.
+
+**Nota de orden en Notion**: la entrada de Gesta (2026-07-30) quedó **por encima** de las mías del 07-31 y 08-01, así que la bitácora ya no se lee estrictamente de más reciente a más antigua. No se reordenó: mover bloques de ~10.000 caracteres con búsqueda y reemplazo sobre la entrada de otro tiene más riesgo de corromperla que valor tiene el orden. Queda a decisión de José.
+
+## 2026-08-01 — Paso 2: los bugs de producción, escritos dentro del núcleo [🟡 PENDIENTE]
+
+**Qué se construyó.** El núcleo conversacional pasa de 1.0.0 a **1.1.0** con las cuatro cosas del paso 2, todas escritas una sola vez y distribuidas por `MANIFIESTO.json`. No hubo gate 🔴: no hay agentes en uso a los que parchar.
+
+Archivos nuevos del núcleo: `agent/handoff.js`, `agent/buffer.js`, `agent/metricas.js`, `lib/texto.js`, `telegram/enviar.js`, `.env.example`. Modificados: `agent/core.js`, `agent/llm.js`, `whatsapp/sender.js`, `whatsapp/webhook.js`, y en la semilla `telegram/bot.js` y `database/supabase.js`.
+
+**A-09 handoff.** Check de modo humano como primera línea de `processMessage`, antes de gastar un token. Activo → devuelve `null`, nunca un centinela de texto. Disparadores: petición explícita, palabras de riesgo (abogado, SERNAC, estafa, emergencia, autolesión) y **fallos técnicos consecutivos** (`HANDOFF_MAX_FALLOS=3`): si el bot lleva tres turnos sin poder responder, seguir mandando "problemas técnicos" a alguien que ya está molesto no ayuda a nadie. El cliente recibe **una** confirmación de que su pedido llegó y después silencio — un chat mudo se lee como abandono. Default `HANDOFF_TIMEOUT_MIN` vacío = **derivación definitiva** (corrección de Gesta, ver entrada anterior). `enModoHumano` **falla cerrado**: si no puede leer el estado, asume que hay un humano; peor caso el bot se calla un rato, la alternativa es hablarle encima a una ejecutiva que ya está atendiendo.
+
+**El silencio, verificado en los cuatro sitios de envío y no por inspección.** El guarda `if (texto == null) return;` está en `sendMessage` y en `enviarTelegram`, ambos del núcleo — no hay un `if` por canal que alguien pueda olvidar. Y `lib/texto.js` devuelve `[]` donde antes devolvía `['']`: segunda línea de defensa, porque con `['']` un guarda olvidado terminaba posteando cuerpo vacío → 400 → `MENSAJE_ERROR` al cliente. La prueba de humo verifica **ausencia explícita de `MENSAJE_ERROR`**, que es el modo de falla real, no solo "no emite".
+
+**A-07 buffer.** Ventana de 6 s que mide el silencio (cada mensaje nuevo la reinicia), montada encima de la cola serial. Cuatro mensajes seguidos = un turno; los turnos fusionados devuelven `null`, el mismo `null` que entienden los guardas de envío. Excepciones que no esperan: handoff, cancelación, adjuntos. **`handoff` está forzado en código** (`EXCEPCIONES_OBLIGATORIAS`) y hay una verificación que vacía `BUFFER_EXCEPCIONES` y comprueba que igual se salta la ventana — el candado que Gesta tiene como S34.
+
+**A-08 timeout.** `AbortController` por llamada, 25 s, 3 intentos totales. Se decidió leer "3 reintentos" de Gesta como **3 intentos totales** y no 4 llamadas: cuatro por 25 s son 100 s y a esa altura el cliente ya se fue. `agent/llm.js` acepta ahora `{ signal }` como segundo argumento en los dos caminos (nativo y OpenAI-compatible); sin eso, abortar no cerraba el socket. Se agregó **mensaje puente** (`onProgreso`, opcional por canal): tras el primer intento fallido sale un "dame un segundo" y uno solo, no uno por intento.
+
+**A-10 métricas.** Una fila por turno con duración, rondas de tool, tools usadas, partes agrupadas y reintentos. Distingue `derivado` de `silencio_handoff`, que es la diferencia entre "se derivó" y "el bot se calló". Persisten vía `db.metricas.registrar` **si el cliente la tiene** — el núcleo no obliga a crear la tabla para arrancar. Registrar una métrica nunca puede romper una respuesta: todo va envuelto.
+
+**Dos bugs míos, encontrados por correr la prueba y no por leerla:**
+1. **`unref()` en el timer del buffer.** Lo puse "para no retrasar el apagado" y el humo murió en silencio, sin salida y con código 0: Node se va cuando solo quedan timers con `unref`, así que el grupo pendiente nunca se procesa. Traducido a producción: el cliente escribió, el proceso no tenía otra cosa que hacer, y su mensaje se perdió sin dejar rastro. Eliminado, con el comentario que explica por qué no volver a ponerlo.
+2. **La config leída al cargar el módulo.** `TIMEOUT_MODELO_MS` e `INTENTOS_MODELO` eran `const` de arriba, así que el arnés cambiaba la variable y el núcleo seguía con el default: dos verificaciones habrían pasado por el motivo equivocado. Toda la config del núcleo (core, buffer, handoff, métricas) se lee ahora **en cada llamada**. La verificación del humo comprueba el **número** configurado (`timeout de 100ms`), no solo la palabra "timeout", justo para que esta regresión no pueda volver en silencio.
+
+**Verificación, corriendo:**
+- `npm run humo` → **41/41 en verde**, 0 tokens, sin credenciales, sin red. Sube de 11 a 41 verificaciones y ahora incluye un escenario 0 dedicado a *los defaults que son decisiones de negocio*, que están ahí porque cambiarlos sin querer es barato y las consecuencias no.
+- **Punta a punta**: `nuevo-proyecto.ps1 -Cliente petshop-lira -Proyecto bot-catalogo -Linea conversacional` → el sincronizador instaló los **13 archivos** del núcleo nuevo (los 6 nuevos aparecieron solos, porque lee el manifiesto) → `npm install` → **el bot arranca y responde**. Con el buffer en su default el arranque tarda 6,1 s, que es exactamente la ventana: comportamiento correcto, no lentitud.
+- Inventario posterior con `sincronizar-nucleo.ps1 -Proyecto <ruta>`: **13/13 AL_DIA**.
+
+**Deuda que sigue abierta**: la suite de 18 escenarios del agente de referencia rescatado **nunca se corrió** (José interrumpió esa ejecución en su momento). El núcleo está verificado por su propia prueba, que es evidencia directa; lo que no está comprobado es que aquellos escenarios sigan en verde contra este núcleo. Se cierra en el paso 3, cuando el arnés se generalice.
+
+**Siguiente**: paso 3 — generalizar el arnés de evals con los 8 perfiles base, tomando la versión de inmobiliaria desde `ade8903` (la de dental no participa: tenía fuga de tokens).

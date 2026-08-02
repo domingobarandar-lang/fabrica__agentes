@@ -1,0 +1,48 @@
+{
+  "version": "1.1.0",
+  "descripcion": "Mapa origen→destino del núcleo conversacional. Lo consumen sincronizar-nucleo.ps1 (para instalar en un proyecto) y nucleo/scripts/humo.js (para armar el overlay de prueba). Una sola fuente de verdad: si un archivo no está acá, no viaja.",
+
+  "nucleo": [
+    { "origen": "nucleo/agent/core.js",        "destino": "agent/core.js",        "nota": "loop agéntico con tool use; acá convergen todos los canales" },
+    { "origen": "nucleo/agent/llm.js",         "destino": "agent/llm.js",         "nota": "adapter multi-proveedor" },
+    { "origen": "nucleo/agent/memory.js",      "destino": "agent/memory.js",      "nota": "historial por canal" },
+    { "origen": "nucleo/agent/handoff.js",     "destino": "agent/handoff.js",     "nota": "derivación a humano; definitiva por defecto" },
+    { "origen": "nucleo/agent/buffer.js",      "destino": "agent/buffer.js",      "nota": "agrupa mensajes seguidos; handoff se salta la ventana SIEMPRE" },
+    { "origen": "nucleo/agent/metricas.js",    "destino": "agent/metricas.js",    "nota": "métricas por turno; nunca rompe una respuesta" },
+    { "origen": "nucleo/lib/texto.js",         "destino": "lib/texto.js",         "nota": "dividirMensaje compartido por todos los canales de envío" },
+    { "origen": "nucleo/whatsapp/webhook.js",  "destino": "whatsapp/webhook.js",  "nota": "webhook Meta + firma HMAC" },
+    { "origen": "nucleo/whatsapp/sender.js",   "destino": "whatsapp/sender.js",   "nota": "envío WhatsApp + guarda de silencio" },
+    { "origen": "nucleo/telegram/enviar.js",   "destino": "telegram/enviar.js",   "nota": "envío Telegram + guarda de silencio" },
+    { "origen": "nucleo/nixpacks.toml",        "destino": "nixpacks.toml",        "nota": "build Railway" },
+    { "origen": "nucleo/.gitignore",           "destino": ".gitignore",           "nota": "mantiene .env fuera del repo del cliente" },
+    { "origen": "nucleo/.env.example",         "destino": ".env.example",         "nota": "variables del núcleo; LLM_* desde el día uno, nunca ANTHROPIC_* por defecto" }
+  ],
+
+  "ejemplo": [
+    { "origen": "ejemplo/agent/prompts.js",     "destino": "agent/prompts.js" },
+    { "origen": "ejemplo/agent/tools.js",       "destino": "agent/tools.js" },
+    { "origen": "ejemplo/database/supabase.js", "destino": "database/supabase.js" },
+    { "origen": "ejemplo/index.js",             "destino": "index.js" },
+    { "origen": "ejemplo/telegram/bot.js",      "destino": "telegram/bot.js" }
+  ],
+
+  "plantillas": [
+    { "origen": "nucleo/package.json.tpl", "destino": "package.json", "sustituir": ["NOMBRE", "DESCRIPCION"] }
+  ],
+
+  "nunca_tocar": [
+    "agent/prompts.js",
+    "agent/tools.js",
+    "database/schema.sql",
+    "agente.config.json",
+    ".env",
+    "BITACORA.md",
+    "railway.toml"
+  ],
+
+  "notas": {
+    "railway.toml": "NO viaja en el núcleo: su startCommand es una decisión de canal por cliente (telegram/bot.js vs index.js). Se genera desde agente.config.json.",
+    "ejemplo": "Cumple dos roles: overlay de prueba para nucleo/scripts/humo.js, y semilla que nuevo-proyecto.ps1 deposita para que un proyecto nuevo arranque y responda desde el minuto uno.",
+    "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como origen en 'nucleo'. Es una guarda contra pisar el producto del cliente."
+  }
+}

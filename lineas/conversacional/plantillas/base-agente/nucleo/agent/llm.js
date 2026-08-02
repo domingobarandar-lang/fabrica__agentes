@@ -92,7 +92,10 @@ function crearClienteOpenAICompat(proveedor) {
   if (!baseUrl) throw new Error(`[LLM] LLM_PROVIDER=${proveedor} requiere LLM_BASE_URL en .env`);
   if (!apiKey) throw new Error(`[LLM] Falta LLM_API_KEY en .env para el proveedor ${proveedor}`);
 
-  const create = async (params) => {
+  // Segundo parámetro `{ signal }`: core.js impone un timeout duro con
+  // AbortController. Sin pasarlo al fetch, abortar no cerraría el socket y la
+  // conexión quedaría colgando aunque el turno ya se dio por perdido.
+  const create = async (params, opciones = {}) => {
     const body = {
       model: process.env.LLM_MODEL || params.model,
       max_tokens: params.max_tokens,
@@ -109,6 +112,7 @@ function crearClienteOpenAICompat(proveedor) {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(body),
+      signal: opciones.signal,
     });
 
     if (!res.ok) {
@@ -130,7 +134,9 @@ function crearClienteAnthropicNativo() {
   }
   const Anthropic = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const create = (params) => client.messages.create(params);
+  // El SDK acepta { signal } como segundo argumento: mismo contrato que el
+  // camino OpenAI-compatible, así el timeout de core.js funciona igual en los dos.
+  const create = (params, opciones = {}) => client.messages.create(params, opciones);
   return { messages: { create }, beta: { messages: { create } } };
 }
 
