@@ -323,7 +323,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 **Nota de orden en Notion**: la entrada de Gesta (2026-07-30) quedó **por encima** de las mías del 07-31 y 08-01, así que la bitácora ya no se lee estrictamente de más reciente a más antigua. No se reordenó: mover bloques de ~10.000 caracteres con búsqueda y reemplazo sobre la entrada de otro tiene más riesgo de corromperla que valor tiene el orden. Queda a decisión de José.
 
-## 2026-08-01 — Paso 2: los bugs de producción, escritos dentro del núcleo [🟡 PENDIENTE]
+## 2026-08-06 — Paso 2: los bugs de producción, escritos dentro del núcleo [🟡 PENDIENTE]
 
 **Qué se construyó.** El núcleo conversacional pasa de 1.0.0 a **1.1.0** con las cuatro cosas del paso 2, todas escritas una sola vez y distribuidas por `MANIFIESTO.json`. No hubo gate 🔴: no hay agentes en uso a los que parchar.
 
@@ -351,3 +351,5 @@ Archivos nuevos del núcleo: `agent/handoff.js`, `agent/buffer.js`, `agent/metri
 **Deuda que sigue abierta**: la suite de 18 escenarios del agente de referencia rescatado **nunca se corrió** (José interrumpió esa ejecución en su momento). El núcleo está verificado por su propia prueba, que es evidencia directa; lo que no está comprobado es que aquellos escenarios sigan en verde contra este núcleo. Se cierra en el paso 3, cuando el arnés se generalice.
 
 **Siguiente**: paso 3 — generalizar el arnés de evals con los 8 perfiles base, tomando la versión de inmobiliaria desde `ade8903` (la de dental no participa: tenía fuga de tokens).
+
+> **Nota de fechas (2026-08-06)**: el reloj de la máquina de trabajo va 5 días atrasado — marca 2026-08-01 cuando la fecha real es 2026-08-06 (confirmado contra el servidor de Notion). Los commits `bf5529b` y `87ba5a8` quedaron fechados 2026-08-01 por esa razón, no porque el trabajo sea de ese día. Las entradas anteriores de este archivo pueden tener el mismo desfase. Conviene ajustar el reloj del sistema antes de seguir: la fecha de un commit no se puede corregir después sin reescribir historia.
