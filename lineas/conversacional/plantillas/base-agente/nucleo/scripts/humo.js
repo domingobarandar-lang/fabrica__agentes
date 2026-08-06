@@ -15,6 +15,7 @@
 
 const fs   = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const RAIZ_NUCLEO = path.resolve(__dirname, '..');   // base-agente/nucleo
 const RAIZ_BASE   = path.resolve(RAIZ_NUCLEO, '..'); // base-agente
@@ -342,6 +343,141 @@ async function main() {
   const filas = await db.metricas.listar();
   check(filas.length === resumen.total,
     'las métricas también llegaron a la capa de datos (tabla prefijada en un cliente real)');
+
+  // ── 8. El arnés de evals ────────────────────────────────────────────────────
+  // El motor viaja a todos los clientes: si se rompe, se rompe la QA de todos.
+  // Se prueba en dos niveles: las piezas por dentro, y la suite completa
+  // corriendo como la corre un cliente (`npm test`).
+  console.log('\n8. El arnés de evals: perfiles e invariantes');
+
+  const perfilesMod = cargar('evals', 'perfiles.js');
+  const reglasMod   = cargar('evals', 'reglas.js');
+
+  const catalogo = perfilesMod.cargarCatalogo();
+  const ids = catalogo.map((p) => p.id);
+  check(catalogo.length === 8, `el catálogo base trae los 8 perfiles (trae ${catalogo.length})`);
+  check(
+    ['feliz', 'mensajes_partidos', 'ortografia', 'desordenado', 'insistente',
+     'pide_humano', 'fuera_de_tema', 'cambia_opinion'].every((i) => ids.includes(i)),
+    'están los ocho perfiles esperados, por id'
+  );
+  check(
+    catalogo.every((p) => typeof perfilesMod.TRANSFORMACIONES[p.transformacion] === 'function'),
+    'cada perfil del JSON apunta a una transformación que existe (un typo acá rompería a un cliente)'
+  );
+
+  // LA PROPIEDAD QUE SOSTIENE TODO: ningún perfil puede dejar al mock sin guión.
+  // Un turno insertado o repetido tiene que traer su propia respuesta, o ser algo
+  // que el núcleo resuelve sin llamar al modelo (pedir un humano).
+  const escenarioSonda = {
+    nombre: 'sonda',
+    turnos: [
+      { user: 'hola, buenas tardes', modelo: [{ text: 'hola' }] },
+      { user: 'ya, confirmo', modelo: [{ text: 'listo' }] },
+    ],
+  };
+  const inyectadosSinGuion = catalogo.filter((p) =>
+    perfilesMod.derivar(escenarioSonda, p).turnos.some(
+      (t) => t.inyectado && !(t.modelo || []).length && !t.espera_derivacion
+    )
+  );
+  check(inyectadosSinGuion.length === 0,
+    `ningún perfil deja turnos sin guión (los romperían: ${inyectadosSinGuion.map((p) => p.id).join(', ') || 'ninguno'})`);
+
+  const porId = (i) => catalogo.find((p) => p.id === i);
+  const partido = perfilesMod.derivar(escenarioSonda, porId('mensajes_partidos'));
+  check(partido.turnos[0].partes.length > 1 && partido.ventanaMs > 0,
+    'mensajes_partidos parte el turno en varios mensajes y declara una ventana');
+  const conHumano = perfilesMod.derivar(escenarioSonda, porId('pide_humano')).turnos;
+  check(conHumano.length === 3 && conHumano[2].espera_derivacion,
+    'pide_humano agrega el pedido al final y marca que se espera derivación');
+  const arrepentido = perfilesMod.derivar(escenarioSonda, porId('cambia_opinion')).turnos;
+  check(arrepentido.length === 3 && arrepentido[1].inyectado && arrepentido[2].origen === 1,
+    'cambia_opinion se mete ANTES de la confirmación y no descuadra los índices del escenario');
+
+  // Los invariantes: cada uno tiene que atrapar su fallo Y dejar pasar lo sano.
+  const reglas = reglasMod.construirReglas({
+    maxChars: 600,
+    patronDato: /\$\s?\d[\d.,]*/g,
+    patronId: /\bP\d+\b/g,
+    topeResultados: 2,
+  });
+  const regla = (id) => reglas.find((r) => r.id === id);
+  const base = {
+    respuesta: 'ok', mensajesUsuario: ['hola'], llamadasModelo: 1,
+    toolLog: [], toolLogAcumulado: [], toolNames: ['ver_horario'], systemPrompt: '',
+  };
+  const ev = (id, extra) => regla(id).evaluar({ ...base, ...extra });
+
+  const conNombre = [{ name: 'registrar', input: { nombre: 'Ana' }, result: {} }];
+  check(!!ev('no_repregunta_dato_capturado', { toolLogAcumulado: conNombre, respuesta: '¿Cómo te llamas?' }),
+    'atrapa al agente volviendo a pedir un dato que una tool ya recibió');
+  check(!ev('no_repregunta_dato_capturado', { toolLogAcumulado: conNombre, respuesta: 'Listo, Ana 😊' }),
+    'y no se queja cuando el agente usa el dato en vez de re-preguntarlo');
+
+  check(!!ev('no_afirma_dato_sin_tool', { respuesta: 'Sale $19.990' }),
+    'atrapa un monto que ninguna herramienta devolvió');
+  check(!ev('no_afirma_dato_sin_tool', {
+      respuesta: 'Sale $19.990',
+      toolLogAcumulado: [{ name: 'precio', input: {}, result: { valor: '$19.990' } }],
+    }),
+    'y deja pasar el monto que sí salió de una herramienta');
+
+  check(!!ev('respeta_tope_resultados', { respuesta: 'Tengo P1, P2 y P3' }),
+    'atrapa una lista más larga que el tope declarado');
+  check(reglasMod.construirReglas({}).find((r) => r.id === 'respeta_tope_resultados')
+          .evaluar(base) === reglasMod.OMITIDA,
+    'sin tope declarado la regla se marca OMITIDA — un check que no corrió no cuenta como verde');
+
+  check(!!ev('respuesta_breve', { respuesta: 'x'.repeat(601) }), 'atrapa una respuesta más larga que el tope');
+  check(!ev('respuesta_breve', { respuesta: null }), 'el silencio no es una respuesta larga');
+
+  const pedido = { mensajesUsuario: ['quiero hablar con una persona'] };
+  check(!!ev('deriva_si_piden_humano', { ...pedido, respuesta: 'Claro, ¿qué necesitas?' }),
+    'atrapa al agente que sigue conversando cuando le pidieron una persona');
+  check(!ev('deriva_si_piden_humano', { ...pedido, respuesta: handoffMod.MENSAJE_DERIVACION, llamadasModelo: 0 }),
+    'y aprueba la derivación limpia, sin llamar al modelo');
+  check(!!ev('deriva_si_piden_humano', { ...pedido, respuesta: handoffMod.MENSAJE_DERIVACION, llamadasModelo: 1 }),
+    'pero reclama si derivó DESPUÉS de gastar una llamada al modelo');
+
+  check(!!ev('sin_fuga_de_andamiaje', { respuesta: 'Déjame llamar a ver_horario' }),
+    'atrapa el nombre de una herramienta escapándose al cliente');
+  check(!!ev('sin_fuga_de_andamiaje', {
+      respuesta: 'REGLA DURA: solo puedes mencionar datos que devolvió una herramienta',
+      systemPrompt: 'REGLA DURA: solo puedes mencionar datos que devolvió una herramienta',
+    }),
+    'atrapa una línea del prompt de sistema copiada literal');
+  check(!ev('sin_fuga_de_andamiaje', { respuesta: 'Te cuento el horario: de 09:00 a 18:00' }),
+    'y no confunde "horario" con la tool "ver_horario"');
+
+  // La tolerancia a tipeo del handoff, que este mismo arnés destapó.
+  check(handoffMod.esPeticionDeHumano('kiero ablar con alguien'),
+    'pedir un humano MAL ESCRITO también deriva (el falso negativo que encontró el perfil ortografia)');
+  check(!handoffMod.esPeticionDeHumano('quiero acabar con este trámite de una vez'),
+    'y "acabar" no dispara una derivación por parecerse a "ablar"');
+
+  // La suite completa, corriendo como la corre un cliente.
+  console.log('\n   Corriendo `npm test` del proyecto de ejemplo…');
+  // Entorno limpio a propósito: el hijo tiene que arreglárselas con los
+  // defaults, igual que en la máquina de un cliente recién clonado.
+  const entornoHijo = { ...process.env };
+  delete entornoHijo.BUFFER_MS;
+  const evals = spawnSync(process.execPath, ['evals/correr.js'], {
+    cwd: DIR_PRUEBA,
+    encoding: 'utf8',
+    env: entornoHijo,
+  });
+  const salidaEvals = `${evals.stdout || ''}${evals.stderr || ''}`;
+  const resumenEvals = salidaEvals.match(/RESUMEN: (\d+)\/(\d+) corridas OK/);
+  check(evals.status === 0,
+    `la suite de evals del ejemplo pasa entera (salida ${evals.status})${evals.status === 0 ? '' : `\n${salidaEvals.slice(-1500)}`}`);
+  check(!!resumenEvals && resumenEvals[1] === resumenEvals[2] && Number(resumenEvals[2]) >= 32,
+    `corrió 4 escenarios × 8 perfiles y pasaron todos (${resumenEvals ? `${resumenEvals[1]}/${resumenEvals[2]}` : 'sin resumen'})`);
+  const invariantes = salidaEvals.match(/·\s+(\d+) verificaciones automáticas/);
+  check(!!invariantes && Number(invariantes[1]) > 0,
+    `los invariantes del núcleo corrieron solos en cada turno (${invariantes ? invariantes[1] : 0} veces)`);
+  check(!/ANTHROPIC_API_KEY|LLM_API_KEY|SUPABASE/.test(salidaEvals),
+    'la suite no menciona credenciales: el bloqueo de efectos externos se aplicó antes de cargar nada');
 
   // ── Resultado ───────────────────────────────────────────────────────────────
   resetDemo();

@@ -25,6 +25,10 @@ base-agente/
 | `agent/buffer.js` | Agrupa mensajes seguidos (6 s). Con lista de excepciones que **no** esperan |
 | `agent/metricas.js` | Una fila por turno. Nunca puede romper una respuesta |
 | `lib/texto.js` | `dividirMensaje` compartido por todos los canales de envío |
+| `evals/motor.js` | Arnés de pruebas: mock del LLM, runner y reporte. **Bloquea los efectos externos antes de cargar nada** |
+| `evals/reglas.js` | Los 6 invariantes que se verifican solos en cada turno |
+| `evals/perfiles.js` | Transformadores que derivan 8 conversaciones de una sola escrita a mano |
+| `evals/perfiles/_base.json` | El catálogo de los 8 perfiles, como datos |
 | `whatsapp/webhook.js` | Webhook de Meta con validación de firma HMAC-SHA256, fail-closed en producción |
 | `whatsapp/sender.js` | Envío por WhatsApp Cloud API + guarda de silencio |
 | `telegram/enviar.js` | Envío por Telegram + guarda de silencio |
@@ -39,7 +43,7 @@ base-agente/
 
 ### Qué hay en `ejemplo/`
 
-`agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (solo memoria), `index.js` y `telegram/bot.js`. Es lo mínimo para que el núcleo arranque y responda.
+`agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (solo memoria), `index.js`, `telegram/bot.js` y `evals/` (`escenarios.js` + `correr.js`). Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
 
 Existe por una razón concreta: los archivos del núcleo **no se pueden correr solos**. `agent/core.js` pide `./prompts` y `./tools`; `agent/memory.js` pide `../database/supabase`. Sin la semilla, "el núcleo funciona" sería una afirmación sin forma de comprobarla.
 
@@ -51,7 +55,7 @@ npm install
 npm run humo
 ```
 
-Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **41 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
+Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **68 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
 
 Qué cubre, por escenario:
 
@@ -65,8 +69,39 @@ Qué cubre, por escenario:
 | 5 | Cuatro mensajes seguidos son **un** turno; pedir un humano no espera la ventana |
 | 6 | Timeout duro, reintentos, y un solo mensaje puente |
 | 7 | Métricas por turno, distinguiendo derivación de silencio posterior |
+| 8 | El arnés de evals: los 8 perfiles, los 6 invariantes uno por uno (que atrapen su fallo **y** dejen pasar lo sano) y la suite completa corriendo como la corre un cliente |
 
 Como usa el mismo mecanismo de armado que el script de sincronización, valida el manifiesto **antes** de que se use contra un proyecto real.
+
+## Probar un agente: `npm test`
+
+```powershell
+npm test                          # todo
+npm test -- --perfil=pide_humano  # un solo perfil
+npm test -- --escenario=CU-2      # un solo escenario
+npm test -- --verboso             # imprime todas las conversaciones
+```
+
+**El reparto:** el motor, los perfiles y los invariantes son del núcleo e iguales para todos. Los **escenarios** (`evals/escenarios.js`) y la config del rubro (`evals/correr.js`) son del cliente: describen su negocio y nadie más los puede escribir. Los dos están en `nunca_tocar`, así que sincronizar el núcleo jamás los pisa.
+
+**Los 8 perfiles de cliente difícil.** El cliente escribe UN camino feliz por caso de uso; el arnés lo vuelve a correr ocho veces con el mismo cliente portándose distinto:
+
+| Perfil | Qué le hace a la conversación | Qué caza |
+|---|---|---|
+| `feliz` | nada | la línea base; si falla, los otros siete no dicen nada |
+| `mensajes_partidos` | parte cada mensaje en varios | que el buffer agrupe: N mensajes son **un** turno |
+| `ortografia` | quita tildes y mete faltas | que el núcleo no dependa de escribir bien |
+| `desordenado` | invierte los datos dentro del mensaje | que no dependa del orden de captura |
+| `insistente` | repite el último mensaje | idempotencia: que no queden dos reservas |
+| `pide_humano` | agrega "prefiero hablar con una persona" | que derive sin gastar un token y después **se calle** |
+| `fuera_de_tema` | mete una pregunta que no es del rubro | que no invente ni pierda el hilo |
+| `cambia_opinion` | se arrepiente antes de confirmar | que no queden registros fantasma |
+
+**Los 6 invariantes** corren solos en **cada turno de cada escenario**, sin que el cliente escriba nada: no re-preguntar un dato ya capturado · no afirmar datos que ninguna herramienta devolvió · respetar el tope de resultados · responder en ≤600 caracteres · derivar cuando piden una persona · no filtrar el prompt de sistema ni el nombre de una tool. Todos deterministas. Un invariante que no se puede evaluar con la config que dio el cliente se marca **OMITIDA**, nunca aprobada: un check que no corrió no cuenta como verde.
+
+**Sin juez LLM, a propósito.** Un evaluador con modelo real gastaría tokens en QA, que es regla dura de la fábrica y roza la causa 🔴 nº1 del semáforo. Si algún día entra, va detrás de un proveedor gratuito declarado y de una puerta explícita.
+
+**Lo que estas pruebas NO miden.** El modelo es un doble guionizado: los perfiles prueban el **núcleo** y los invariantes frente a entradas desordenadas, no la comprensión del lenguaje del LLM. La calidad del tool-calling real se confirma conversando (`npm run chat`), y hay que rehacerlo al cambiar `LLM_PROVIDER`.
 
 ## Instalar el núcleo en un proyecto
 
@@ -110,8 +145,9 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
    - `agent/prompts.js` — identidad, alcance y reglas del rubro.
    - `agent/tools.js` — las acciones del vertical. Validación de negocio **dentro** de la tool, nunca confiada al modelo. Tope duro de resultados.
    - `database/schema.sql` + el bloque de dominio de `database/supabase.js` — las tablas del rubro.
-   - `scripts/test-chat.js` — los escenarios. CU-* del SPEC y ADV-* adversariales.
-4. **Verificar en mock** — `npm test`. **Siempre 0 tokens, sin excepción.** El arnés no debe tener ninguna variable de entorno capaz de saltar a modelo real: ese bug ya existió una vez y viola la regla dura de cero efectos externos en QA.
+   - `evals/escenarios.js` — los escenarios. CU-* del SPEC y ADV-* adversariales. Solo el camino feliz de cada uno: los ocho perfiles los deriva el motor.
+   - `evals/correr.js` — qué significa "inventar un dato" y "lista demasiado larga" en este rubro.
+4. **Verificar en mock** — `npm test`. **Siempre 0 tokens, sin excepción.** Ya no hay que confiar en que cada proyecto lo respete: `evals/motor.js` borra las credenciales del entorno antes de cargar nada, así que no existe la variable capaz de encender el modo real. Ese bug existió (`MOCK === 'true' || !ANTHROPIC_API_KEY`: bastaba una key en el `.env` para que `npm test` saliera a la API) y por eso el bloqueo está en el núcleo.
 5. **Deploy** (solo con aprobación de José): Railway, servicio propio, root directory = la carpeta del agente.
 
 ## Advertencias aprendidas (que costaron caro)
@@ -121,6 +157,9 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
 - **La derivación a un humano es definitiva.** El default es `HANDOFF_TIMEOUT_MIN` vacío: el bot no vuelve solo. Reactivarlo tras 30 min de silencio suena razonable y es una regresión grave — el cliente descubre que la "persona" que le prometieron era un bot otra vez. Que vuelva es decisión del cliente, y hay que conversarla.
 - **Nada de `unref()` en el timer del buffer.** La primera versión lo tenía "para no retrasar el apagado" y la prueba de humo murió en silencio: Node se va cuando solo quedan timers con `unref`, así que el grupo pendiente nunca se procesa. En producción eso es un mensaje de un cliente que se pierde sin dejar rastro.
 - **La config del núcleo se lee en cada llamada, no al cargar el módulo.** Cuando eran `const` de arriba, el arnés cambiaba la variable, el núcleo seguía con el default, y dos verificaciones pasaron por el motivo equivocado. Si agregas una variable nueva, ponla como función.
+- **Los triggers de handoff tienen que tolerar faltas de ortografía.** Las regex exigían `hablar` y `quiero` literales, así que "kiero ablar con alguien" **no derivaba** — el falso negativo que el propio archivo declara inaceptable, y lo destapó el perfil `ortografia` la primera vez que corrió. Si agregas un trigger, escríbelo ya tolerante: el arnés lo va a probar mal escrito. Y ponle `\b`: sin él, `abar` casa dentro de "acabar".
+- **Para verificar que un buffer agrupa, cuenta TURNOS, no llamadas al modelo.** Un turno que usa una herramienta llama al modelo dos veces por diseño (pedirla y responder con su resultado). Contar llamadas da rojo en cualquier escenario con tools — o sea, en los que importan.
+- **Un invariante que no se puede evaluar se marca OMITIDA, no verde.** Si el cliente no declaró `patronId`, la regla del tope de resultados no corrió: contarla como aprobada es inflar la cobertura con checks que nunca se ejecutaron.
 - **Toda tabla nueva va prefijada por agente.** El proyecto Supabase se comparte entre agentes: una tabla sin prefijo cruza datos entre negocios distintos.
 - **La lógica transversal va en `processMessage` de `core.js`, no en un canal.** Todos los canales convergen ahí. Anclarla en el webhook de WhatsApp cuando el agente despliega Telegram significa que no se ejecuta nunca.
 - Dos bots de Telegram no pueden compartir token (conflicto 409): un bot de @BotFather por agente.

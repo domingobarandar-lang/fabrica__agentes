@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "descripcion": "Mapa origen→destino del núcleo conversacional. Lo consumen sincronizar-nucleo.ps1 (para instalar en un proyecto) y nucleo/scripts/humo.js (para armar el overlay de prueba). Una sola fuente de verdad: si un archivo no está acá, no viaja.",
 
   "nucleo": [
@@ -10,6 +10,10 @@
     { "origen": "nucleo/agent/buffer.js",      "destino": "agent/buffer.js",      "nota": "agrupa mensajes seguidos; handoff se salta la ventana SIEMPRE" },
     { "origen": "nucleo/agent/metricas.js",    "destino": "agent/metricas.js",    "nota": "métricas por turno; nunca rompe una respuesta" },
     { "origen": "nucleo/lib/texto.js",         "destino": "lib/texto.js",         "nota": "dividirMensaje compartido por todos los canales de envío" },
+    { "origen": "nucleo/evals/motor.js",       "destino": "evals/motor.js",       "nota": "arnés de evaluación: mock del LLM, runner y reporte. Bloquea los efectos externos antes de cargar nada" },
+    { "origen": "nucleo/evals/reglas.js",      "destino": "evals/reglas.js",      "nota": "invariantes deterministas que corren solos en cada turno" },
+    { "origen": "nucleo/evals/perfiles.js",    "destino": "evals/perfiles.js",    "nota": "transformadores de cliente difícil" },
+    { "origen": "nucleo/evals/perfiles/_base.json", "destino": "evals/perfiles/_base.json", "nota": "catálogo de los 8 perfiles base. El cliente agrega los suyos en evals/perfiles/<cliente>.json" },
     { "origen": "nucleo/whatsapp/webhook.js",  "destino": "whatsapp/webhook.js",  "nota": "webhook Meta + firma HMAC" },
     { "origen": "nucleo/whatsapp/sender.js",   "destino": "whatsapp/sender.js",   "nota": "envío WhatsApp + guarda de silencio" },
     { "origen": "nucleo/telegram/enviar.js",   "destino": "telegram/enviar.js",   "nota": "envío Telegram + guarda de silencio" },
@@ -23,7 +27,9 @@
     { "origen": "ejemplo/agent/tools.js",       "destino": "agent/tools.js" },
     { "origen": "ejemplo/database/supabase.js", "destino": "database/supabase.js" },
     { "origen": "ejemplo/index.js",             "destino": "index.js" },
-    { "origen": "ejemplo/telegram/bot.js",      "destino": "telegram/bot.js" }
+    { "origen": "ejemplo/telegram/bot.js",      "destino": "telegram/bot.js" },
+    { "origen": "ejemplo/evals/escenarios.js",  "destino": "evals/escenarios.js" },
+    { "origen": "ejemplo/evals/correr.js",      "destino": "evals/correr.js" }
   ],
 
   "plantillas": [
@@ -34,6 +40,8 @@
     "agent/prompts.js",
     "agent/tools.js",
     "database/schema.sql",
+    "evals/escenarios.js",
+    "evals/correr.js",
     "agente.config.json",
     ".env",
     "BITACORA.md",
@@ -43,6 +51,7 @@
   "notas": {
     "railway.toml": "NO viaja en el núcleo: su startCommand es una decisión de canal por cliente (telegram/bot.js vs index.js). Se genera desde agente.config.json.",
     "ejemplo": "Cumple dos roles: overlay de prueba para nucleo/scripts/humo.js, y semilla que nuevo-proyecto.ps1 deposita para que un proyecto nuevo arranque y responda desde el minuto uno.",
-    "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como origen en 'nucleo'. Es una guarda contra pisar el producto del cliente."
+    "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como destino en 'nucleo'. Es una guarda contra pisar el producto del cliente. Implementada de verdad desde 2026-08-06: antes estaba solo escrita acá.",
+    "evals": "El motor, los perfiles y los invariantes son NÚCLEO (iguales para todos). Los escenarios y la config del rubro son del CLIENTE y por eso están en 'ejemplo' y en 'nunca_tocar': se escriben una vez por proyecto y no se pisan nunca."
   }
 }

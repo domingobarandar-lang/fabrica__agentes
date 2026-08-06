@@ -80,6 +80,22 @@ if (-not (Test-Path -LiteralPath $Manifiesto)) {
 $man     = Get-Content -LiteralPath $Manifiesto -Raw -Encoding UTF8 | ConvertFrom-Json
 $version = (Get-Content -LiteralPath $ArchivoVersion -Raw -Encoding UTF8).Trim()
 
+# GUARDA nunca_tocar. El manifiesto la prometía en sus notas desde el día uno,
+# pero no estaba implementada: era una propiedad de seguridad documentada y
+# ausente. Importa de verdad desde que evals/escenarios.js —la suite de pruebas
+# del cliente, escrita a mano— está en la lista: si alguien la moviera al núcleo
+# "para compartirla", un -Aplicar borraría las pruebas de todos los clientes sin
+# avisar. Se verifica antes de tocar nada, en cada corrida.
+$colision = @($man.nucleo | Where-Object { $man.nunca_tocar -contains $_.destino })
+if ($colision.Count -gt 0) {
+    Write-Host "ERROR en MANIFIESTO.json: hay archivos del núcleo que pisarían producto del cliente." -ForegroundColor Red
+    foreach ($c in $colision) {
+        Write-Host "  - '$($c.destino)' está en 'nucleo' y también en 'nunca_tocar'" -ForegroundColor Red
+    }
+    Write-Host "  Sácalo de una de las dos listas antes de sincronizar." -ForegroundColor Red
+    exit 1
+}
+
 function Get-Hash256 {
     param([string]$Ruta)
     if (-not (Test-Path -LiteralPath $Ruta)) { return $null }

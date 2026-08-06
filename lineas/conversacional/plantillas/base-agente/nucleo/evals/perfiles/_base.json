@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "descripcion": "Perfiles base de cliente difícil. Un perfil TRANSFORMA los turnos de un escenario que el cliente ya escribió: con un solo camino feliz escrito a mano, el arnés deriva ocho conversaciones distintas. Los transformadores están implementados en evals/perfiles.js y se buscan por el campo `transformacion`.",
+
+  "convenciones": {
+    "_base.json": "Es del NÚCLEO: se sincroniza y no se edita en el proyecto del cliente. Para perfiles propios, crear evals/perfiles/<cliente>.json con la misma forma y pasarlo en `perfilesExtra`.",
+    "seguridad_del_guion": "Todos los perfiles están diseñados para NO desbalancear el guión del mock: o no agregan turnos, o el turno que agregan trae su propia respuesta (`respuesta_generica`), o lo resuelve el núcleo antes de llamar al modelo (pedir un humano). Si escribes un perfil nuevo, respeta esa propiedad o el mock se quedará sin guión.",
+    "que_prueban_de_verdad": "El modelo es un doble guionizado, así que estos perfiles NO miden la comprensión del lenguaje del LLM. Miden el NÚCLEO (buffer, handoff, cola) y los invariantes de evals/reglas.js frente a entradas desordenadas. La calidad del modelo real se confirma conversando, no acá."
+  },
+
+  "perfiles": [
+    {
+      "id": "feliz",
+      "titulo": "Cliente ordenado",
+      "que_prueba": "El caso de uso tal como se escribió. Es la línea base: si este falla, los otros siete no dicen nada.",
+      "transformacion": "identidad",
+      "opciones": {}
+    },
+    {
+      "id": "mensajes_partidos",
+      "titulo": "Escribe como habla: varios mensajes seguidos",
+      "que_prueba": "Que el buffer agrupe. Cuatro mensajes en la ventana son UN turno, no cuatro: el modelo debe recibir una sola llamada y solo el último mensaje recibe respuesta.",
+      "porque": "Es la forma normal de escribir en WhatsApp. Sin buffer el bot contesta cuatro veces y queda conversando solo.",
+      "transformacion": "partir_turnos",
+      "opciones": {
+        "separadores": [", ", ". ", " y "],
+        "max_partes": 4,
+        "ventana_ms": 150
+      }
+    },
+    {
+      "id": "ortografia",
+      "titulo": "Escribe con faltas y sin tildes",
+      "que_prueba": "Que el núcleo no dependa de la ortografía. En particular que pedir un humano mal escrito ('kiero ablar con alguien') igual derive.",
+      "porque": "Acá se encontró un falso negativo real: las regex de handoff exigían 'hablar' y 'quiero' literales. Ver agent/handoff.js.",
+      "transformacion": "ensuciar_ortografia",
+      "opciones": {
+        "quitar_tildes": true,
+        "quitar_signos_apertura": true,
+        "minusculas": true,
+        "sustituciones": [["qu", "k"], ["ll", "y"], ["v", "b"]]
+      }
+    },
+    {
+      "id": "desordenado",
+      "titulo": "Da los datos en otro orden del que se le pidió",
+      "que_prueba": "Que el agente no dependa del orden de captura: invierte los fragmentos separados por coma dentro de cada mensaje. Los mismos datos, en otro orden.",
+      "transformacion": "invertir_fragmentos",
+      "opciones": { "separadores": [", "] }
+    },
+    {
+      "id": "insistente",
+      "titulo": "Repite el último mensaje porque no vio la respuesta",
+      "que_prueba": "Idempotencia. Repetir la confirmación no puede crear una segunda reserva, un segundo lead ni un segundo cobro.",
+      "porque": "Escenario real: se corta la señal, el cliente reenvía. Si la tool no es idempotente, quedan dos de todo.",
+      "transformacion": "repetir_ultimo",
+      "opciones": { "veces": 1 }
+    },
+    {
+      "id": "pide_humano",
+      "titulo": "A mitad de camino pide hablar con una persona",
+      "que_prueba": "Que se derive ANTES de gastar un token, con el mensaje de derivación, y que después el bot quede en silencio.",
+      "porque": "Es la acción irreversible del rubro: si alguien pide ayuda y nadie llega, no hay forma de repararlo después.",
+      "transformacion": "insertar_turno",
+      "opciones": {
+        "posicion": "final",
+        "texto": "ya, prefiero hablar con una persona del equipo por favor",
+        "espera_derivacion": true
+      }
+    },
+    {
+      "id": "fuera_de_tema",
+      "titulo": "Se va por las ramas",
+      "que_prueba": "Que el agente reconozca lo que no es suyo sin inventar y sin perder el hilo del caso de uso.",
+      "transformacion": "insertar_turno",
+      "opciones": {
+        "posicion": "penultimo",
+        "texto": "oye y tu sabes si va a llover mañana?",
+        "respuesta_generica": "Eso no lo manejo yo 😅 pero sigamos con lo tuyo, ¿te parece?"
+      }
+    },
+    {
+      "id": "cambia_opinion",
+      "titulo": "Se arrepiente y después vuelve a confirmar",
+      "que_prueba": "Que las idas y venidas no dejen registros fantasma: lo que vale es la última confirmación, y solo esa.",
+      "porque": "En el agente inmobiliario esto fue ADV-6 y encontró visitas duplicadas.",
+      "transformacion": "insertar_turno",
+      "opciones": {
+        "posicion": "penultimo",
+        "texto": "mmm no, espera... mejor no. Ah no, ya, sigamos",
+        "respuesta_generica": "Sin problema, tú me dices 😊"
+      }
+    }
+  ]
+}

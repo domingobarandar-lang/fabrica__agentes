@@ -35,11 +35,30 @@ const maxFallos = () => Number(process.env.HANDOFF_MAX_FALLOS ?? 3);
 // Petición explícita. Deliberadamente amplio: un falso positivo cuesta que una
 // persona conteste un chat que el bot podía atender; un falso negativo cuesta
 // que alguien pida ayuda y nadie llegue.
+//
+// TOLERANCIA A ERRORES DE TIPEO (2026-08-06, paso 3): la gente escribe desde el
+// teléfono y "kiero ablar con alguien" es tan real como la forma correcta.
+// Cuando el perfil `ortografia` del arnés de evals mandó esa frase, el núcleo
+// NO derivó — el peor falso negativo posible, y el que este mismo archivo
+// declara inaceptable dos comentarios más arriba. Por eso `h?abl?ar`,
+// `(qu|k)iero` y `alguien` a secas. Si agregas un trigger nuevo, escríbelo ya
+// tolerante: el arnés lo va a probar mal escrito.
+// El \b importa: sin él, `abar` casa dentro de "acabar" y "acabar con alguien"
+// derivaría por error.
+const V_HABLAR  = '\\bh?abl?ar';                    // hablar / ablar
+const V_QUERER  = '\\b(?:qu|k)iero';                // quiero / kiero
+const QUIEN     =
+  '(?:persona|humano|ser humano|alguien|ejecutiv[oa]|asesor[a]?|vendedor[a]?|encargad[oa]|superviso\\w*)';
+
 const TRIGGERS_PETICION = [
-  /hablar (con|contigo)?\s*(una|un)?\s*(persona|humano|ser humano|alguien real|ejecutiv[oa]|asesor[a]?|vendedor[a]?|encargad[oa]|superviso)/i,
-  /(quiero|necesito|puedo|me pasas|pásame|pasame|derivar|deriva|comunicar|comuníca|comunica)\w*\s+(con\s+)?(una|un)?\s*(persona|humano|ejecutiv[oa]|asesor[a]?|vendedor[a]?|encargad[oa])/i,
+  new RegExp(`${V_HABLAR} (?:con|contigo)?\\s*(?:una|un)?\\s*${QUIEN}`, 'i'),
+  new RegExp(
+    `(?:${V_QUERER}|necesito|puedo|me pasas|p[aá]same|derivar|deriva|comunicar|comun[ií]ca\\w*)` +
+    `\\w*\\s+(?:con\\s+)?(?:una|un)?\\s*${QUIEN}`,
+    'i'
+  ),
   /\b(atenci[oó]n|atienda|atiende)\s+(humana|de una persona|un humano)/i,
-  /\bno\s+(quiero|más)\s+(hablar\s+con\s+)?(un\s+)?(bot|robot|m[aá]quina)\b/i,
+  /\bno\s+(quiero|kiero|más|mas)\s+(h?abl?ar\s+con\s+)?(un\s+)?(bot|robot|m[aá]quina)\b/i,
   /\b(eres|sos|es)\s+un\s+(bot|robot)\b.*\?/i,
 ];
 

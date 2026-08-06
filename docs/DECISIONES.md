@@ -353,3 +353,40 @@ Archivos nuevos del núcleo: `agent/handoff.js`, `agent/buffer.js`, `agent/metri
 **Siguiente**: paso 3 — generalizar el arnés de evals con los 8 perfiles base, tomando la versión de inmobiliaria desde `ade8903` (la de dental no participa: tenía fuga de tokens).
 
 > **Nota de fechas (2026-08-06)**: el reloj de la máquina de trabajo va 5 días atrasado — marca 2026-08-01 cuando la fecha real es 2026-08-06 (confirmado contra el servidor de Notion). Los commits `bf5529b` y `87ba5a8` quedaron fechados 2026-08-01 por esa razón, no porque el trabajo sea de ese día. Las entradas anteriores de este archivo pueden tener el mismo desfase. Conviene ajustar el reloj del sistema antes de seguir: la fecha de un commit no se puede corregir después sin reescribir historia.
+
+## 2026-08-06 — Paso 3: el arnés de pruebas se generaliza (núcleo 1.2.0) [🟡 PENDIENTE]
+
+**Deuda cerrada primero.** La entrada anterior dejó declarado que los 18 escenarios del agente de referencia nunca se corrieron. El agente ya no vive en el repo (se eliminó en el paso 2 por la regla de carpeta externa), pero sigue en la historia: se extrajo `clientes/inmobiliaria-demo/agente` de `ade8903` a un temporal **fuera** del repo, se instaló y se corrió. **18/18 en verde.** Antes de correrlo se verificó que no pudiera salir a la red: sin `.env`, `MODO_MOCK = true` hardcodeado y el cliente LLM inyectado. La deuda queda cerrada con evidencia, no por caducidad.
+
+**El reparto que ordena todo.** El motor, los perfiles y los invariantes son **núcleo** (iguales para todos). Los escenarios y la config del rubro son **del cliente**: describen su negocio y nadie más los puede escribir. Los dos archivos del cliente (`evals/escenarios.js`, `evals/correr.js`) entraron a `nunca_tocar`, así que sincronizar el núcleo no los pisa jamás.
+
+**Archivos nuevos del núcleo**: `evals/motor.js`, `evals/reglas.js`, `evals/perfiles.js`, `evals/perfiles/_base.json`. En la semilla: `evals/escenarios.js` y `evals/correr.js`. `package.json.tpl` apuntaba su `npm test` a `scripts/test-chat.js`, un archivo que la semilla no tenía — ahora apunta a `evals/correr.js`. Núcleo **1.2.0**, 17 archivos.
+
+**La idea que hace útil el arnés: un escenario escrito, ocho conversaciones corridas.** Escribir a mano el cliente que escribe con faltas, el que se arrepiente, el que insiste y el que pide un humano —por cada caso de uso— es exactamente lo que nadie hace, y por eso no se probaba. Un perfil **transforma** los turnos que el cliente ya escribió. Los ocho: `feliz`, `mensajes_partidos`, `ortografia`, `desordenado`, `insistente`, `pide_humano`, `fuera_de_tema`, `cambia_opinion`.
+
+La propiedad de diseño que lo hace posible: **ningún perfil puede desbalancear el guión del mock**. O no agrega turnos, o el turno que agrega trae su propia respuesta, o lo resuelve el núcleo sin llamar al modelo (pedir un humano). Es una propiedad frágil de las que se rompen sin darse cuenta, así que hay una verificación en el humo que la comprueba perfil por perfil.
+
+Los índices se mantienen estables a propósito: `ctx.respuestas[i]` apunta siempre al turno *i* del escenario original aunque el perfil haya insertado turnos en medio. Sin eso, cada `expect()` del cliente habría que escribirlo ocho veces y el arnés no serviría de nada.
+
+**Seis invariantes deterministas, en cada turno de cada escenario, sin que el cliente escriba nada**: no re-preguntar un dato ya capturado · no afirmar datos que ninguna herramienta devolvió · respetar el tope de resultados · responder en ≤600 caracteres · derivar cuando piden una persona (y **antes** de gastar un token) · no filtrar el prompt de sistema ni el nombre de una tool. Un invariante que no se puede evaluar con la config del cliente se marca **OMITIDA**, nunca aprobada: contar un check que no corrió es inflar la cobertura.
+
+**Juez LLM fuera de la v1, a propósito.** Gastaría tokens en QA — regla dura de la fábrica, y roza la causa 🔴 nº1 del semáforo. Si entra algún día, va detrás de un proveedor gratuito declarado y de una puerta explícita.
+
+**Tres hallazgos, los tres por correr y no por leer:**
+
+1. **Falso negativo en el handoff, encontrado por el perfil `ortografia`.** Las regex exigían `hablar` y `quiero` literales: "kiero ablar con alguien" **no derivaba**. Es el peor falso negativo posible y el que el propio `handoff.js` declara inaceptable dos comentarios más arriba. Corregido con `\bh?abl?ar`, `\b(?:qu|k)iero` y `alguien` a secas. El `\b` no es adorno: sin él `abar` casa dentro de "acabar" y "acabar con alguien" derivaría por error — hay verificación para las dos cosas. Cambio 🟡: altera comportamiento observable del núcleo, sin agente en uso al que afecte.
+
+2. **La guarda `nunca_tocar` estaba documentada y no implementada.** `MANIFIESTO.json` prometía en sus notas que `sincronizar-nucleo.ps1` aborta si un archivo del cliente aparece en la lista del núcleo. El script nunca tuvo esa comprobación: era una propiedad de seguridad escrita y ausente. Importa desde hoy, porque `evals/escenarios.js` —la suite de pruebas del cliente, escrita a mano— está en esa lista: si alguien la moviera al núcleo "para compartirla", un `-Aplicar` borraría las pruebas de todos los clientes sin avisar. Implementada, corre en cada invocación.
+
+3. **Un invariante mío mal medido.** Para comprobar que el buffer agrupa yo contaba llamadas al modelo. Un turno que usa una herramienta llama al modelo **dos veces por diseño** (pedirla y responder con su resultado), así que el check daba rojo en cualquier escenario con tools — o sea, en los que importan. Se cuentan turnos frescos, y además se verifica que el texto agrupado que le llegó al modelo contenga todos los mensajes. Más estricto y correcto.
+
+**Verificación, corriendo:**
+- `npm run humo` → **68/68 en verde** (antes 41). Escenario 8 nuevo: los 8 perfiles, los 6 invariantes uno por uno —que atrapen su fallo **y** dejen pasar lo sano— y la suite completa lanzada como subproceso, igual que la corre un cliente.
+- **Prueba de mutación**: se rompió a propósito la ventana del buffer y el arnés se puso rojo en los dos escenarios donde importa. El invariante muerde; no está pasando por casualidad.
+- **Punta a punta**: proyecto nuevo con `nuevo-proyecto.ps1` → los 4 archivos de evals viajaron solos (el sincronizador lee el manifiesto) → `npm install` → `npm test` → **32/32 corridas, 228 verificaciones automáticas**, sin tocar nada.
+- **La regla dura, probada en la condición que la rompió antes**: se puso un `.env` con `ANTHROPIC_API_KEY`, `LLM_API_KEY`, `SUPABASE_URL` y `MOCK=false`. La suite igual corrió 32/32 en mock, sin red. El bloqueo vive en `evals/motor.js` **antes de los `require`** (porque `database/supabase.js` decide en tiempo de carga) y borra las credenciales del entorno: no existe la variable capaz de encender el modo real. El bug de referencia era `MOCK === 'true' || !ANTHROPIC_API_KEY` en el arnés del agente dental — bastaba una key en el `.env` para que `npm test` saliera a la API.
+- Inventario posterior: **17/17 AL_DIA**.
+
+**Lo que estas pruebas no miden, y conviene no olvidarlo.** El modelo es un doble guionizado: los perfiles prueban el **núcleo** y los invariantes frente a entradas desordenadas, no la comprensión del lenguaje del LLM. La calidad del tool-calling real se sigue confirmando conversando, y hay que rehacerlo al cambiar `LLM_PROVIDER`.
+
+**Siguiente**: paso 4 — `agente.config.json` + validador, para absorber la configuración que hoy vive en variables sueltas.
