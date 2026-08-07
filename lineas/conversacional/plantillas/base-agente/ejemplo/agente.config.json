@@ -1,0 +1,51 @@
+{
+  "_lee_esto_primero": "Configuración del agente. Es el ÚNICO archivo donde se declara qué hace este bot: se versiona en git, se revisa de un vistazo y lo valida `npm run validar`. Los secretos NO van acá — proveedor de LLM, keys y tokens viven en .env. Una clave mal escrita acá NO se ignora en silencio: el agente no arranca.",
+
+  "cliente": {
+    "id": "ejemplo",
+    "nombre": "Negocio de ejemplo",
+    "vertical": "demo",
+    "zona_horaria": "America/Santiago"
+  },
+
+  "identidad": {
+    "nombre_agente": "el asistente de ejemplo",
+    "rol": "contarle a la gente el horario de atención del negocio",
+    "tono": "español chileno, cercano y breve",
+    "no_hacer": [
+      "inventar horarios, precios o direcciones",
+      "prometer reservas: este agente todavía no las maneja"
+    ]
+  },
+
+  "canales": {
+    "telegram": { "activo": true, "token_env": "TELEGRAM_TOKEN" },
+    "whatsapp": { "activo": false, "token_env": "WHATSAPP_TOKEN", "phone_id_env": "WHATSAPP_PHONE_ID" },
+    "terminal": { "activo": true }
+  },
+
+  "handoff": {
+    "_nota": "timeout_min null = la derivación es DEFINITIVA. Es el default recomendado y es una decisión de negocio: si el bot vuelve solo, el cliente descubre que la persona que le prometieron era un bot otra vez.",
+    "activo": true,
+    "timeout_min": null,
+    "max_fallos": 3,
+    "inbox": ""
+  },
+
+  "limites": {
+    "historial_turnos": 30,
+    "max_tokens_respuesta": 600,
+    "timeout_modelo_ms": 25000,
+    "intentos_modelo": 3,
+    "buffer_ms": 6000,
+    "buffer_max_partes": 10,
+    "buffer_excepciones": ["handoff", "cancelacion", "adjunto"]
+  },
+
+  "datos": {
+    "_nota": "El proyecto Supabase se comparte entre agentes: TODA tabla va prefijada. Con solo el prefijo basta — los nombres se derivan. Los tabla_* explícitos son para un agente que ya está en uso con otro nombre.",
+    "prefijo": "ejemplo"
+  },
+
+  "metricas": { "activas": true }
+}

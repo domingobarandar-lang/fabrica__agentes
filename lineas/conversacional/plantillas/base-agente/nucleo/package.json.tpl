@@ -9,7 +9,10 @@
     "chat": "node scripts/chat-local.js",
     "telegram": "node telegram/bot.js",
     "telegram:mock": "node telegram/bot.js --mock",
-    "test": "node evals/correr.js"
+    "test": "node evals/correr.js",
+    "validar": "node scripts/validar-config.js",
+    "railway": "node scripts/generar-railway.js",
+    "schema": "node scripts/schema-nucleo.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

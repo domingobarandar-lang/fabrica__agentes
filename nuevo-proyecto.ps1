@@ -201,6 +201,44 @@ if ($Linea -eq 'conversacional') {
             [System.IO.File]::WriteAllText((Join-Path $agenteDir 'package.json'), $pkg, $sinBom)
         }
 
+        # agente.config.json con los datos de ESTE cliente. La semilla trae la
+        # config del negocio de ejemplo; dejarla tal cual significaría que todos
+        # los agentes nuevos comparten el prefijo "ejemplo_" — y el proyecto
+        # Supabase está COMPARTIDO entre agentes, así que dos clientes se
+        # pisarían las sesiones y el modo humano.
+        $rutaConfig = Join-Path $agenteDir 'agente.config.json'
+        if (Test-Path -LiteralPath $rutaConfig) {
+            # Prefijo de tablas: minúsculas, números y guión bajo, empezando por
+            # letra. Es lo que exige Postgres y lo que valida el núcleo.
+            $prefijo = ("$Cliente`_$Proyecto".ToLower() -replace '[^a-z0-9_]', '_') -replace '_+', '_'
+            if ($prefijo -notmatch '^[a-z]') { $prefijo = "a$prefijo" }
+
+            $cfg = Get-Content -Raw -LiteralPath $rutaConfig -Encoding UTF8
+            $cfg = $cfg -replace '"id":\s*"ejemplo"',                     "`"id`": `"$Cliente`""
+            $cfg = $cfg -replace '"nombre":\s*"Negocio de ejemplo"',      "`"nombre`": `"$Cliente`""
+            $cfg = $cfg -replace '"vertical":\s*"demo"',                  '"vertical": ""'
+            $cfg = $cfg -replace '"nombre_agente":\s*"el asistente de ejemplo"', '"nombre_agente": ""'
+            $cfg = $cfg -replace '"prefijo":\s*"ejemplo"',                "`"prefijo`": `"$prefijo`""
+            $sinBomCfg = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($rutaConfig, $cfg, $sinBomCfg)
+            Write-Host "  agente.config.json listo (prefijo de tablas: $prefijo)" -ForegroundColor Gray
+        }
+
+        # railway.toml se GENERA desde los canales activos: su startCommand
+        # decide por qué canal atiende el agente y sincronizarlo pisaría al
+        # cliente que despliega por el otro.
+        if (Get-Command node -ErrorAction SilentlyContinue) {
+            Push-Location $agenteDir
+            try {
+                node 'scripts/generar-railway.js'
+                node 'scripts/validar-config.js'
+            } finally {
+                Pop-Location
+            }
+        } else {
+            Write-Host "AVISO: node no está en el PATH — falta generar railway.toml y validar la config." -ForegroundColor Yellow
+        }
+
         Write-Host "  Núcleo instalado. Verifica cuando quieras con:" -ForegroundColor Gray
         Write-Host "    $sync -Proyecto `"$agenteDir`"" -ForegroundColor Gray
     } else {

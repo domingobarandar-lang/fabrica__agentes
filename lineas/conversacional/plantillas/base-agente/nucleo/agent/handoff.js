@@ -14,23 +14,20 @@
 // cliente descubre que la "persona" que le prometieron era un bot otra vez.
 
 const { db } = require('../database/supabase');
+const config = require('../config');
 
 // La config se lee en cada llamada, no al cargar el módulo: el arnés necesita
-// probar varias combinaciones en una sola corrida.
-const activo = () => process.env.HANDOFF_ACTIVO !== 'false';
+// probar varias combinaciones en una sola corrida. `config.valor` resuelve la
+// precedencia .env > agente.config.json > default del núcleo.
+const activo = () => config.valor('handoff.activo');
 
 // null = derivación definitiva (default). Un número = minutos de inactividad
 // tras los cuales el bot vuelve a tomar el control.
-const timeoutMin = () => {
-  const crudo = process.env.HANDOFF_TIMEOUT_MIN;
-  if (crudo == null || crudo === '' || crudo === 'null') return null;
-  const n = Number(crudo);
-  return Number.isFinite(n) && n > 0 ? n : null;
-};
+const timeoutMin = () => config.valor('handoff.timeout_min');
 
 // Fallos técnicos consecutivos tras los cuales se deriva sin que el cliente lo
 // pida. 0 lo desactiva.
-const maxFallos = () => Number(process.env.HANDOFF_MAX_FALLOS ?? 3);
+const maxFallos = () => config.valor('handoff.max_fallos');
 
 // Petición explícita. Deliberadamente amplio: un falso positivo cuesta que una
 // persona conteste un chat que el bot podía atender; un falso negativo cuesta
@@ -132,10 +129,10 @@ async function activar(canalId, motivo) {
   };
   await db.estadoCanal.set(canalId, estado);
 
-  const inbox = process.env.HANDOFF_INBOX;
+  const inbox = config.valor('handoff.inbox');
   console.log(
     `[Handoff] ${canalId}: derivado a humano (motivo: ${motivo})` +
-    (inbox ? ` — avisar a ${inbox}` : ' — sin HANDOFF_INBOX configurado')
+    (inbox ? ` — avisar a ${inbox}` : ' — sin "handoff.inbox" configurado')
   );
   return estado;
 }

@@ -11,8 +11,9 @@
 // obliga a nadie a crear la tabla para poder arrancar.
 
 const { db } = require('../database/supabase');
+const config = require('../config');
 
-const activas = () => process.env.METRICAS_ACTIVAS !== 'false';
+const activas = () => config.valor('metricas.activas');
 const MAX_EN_MEMORIA = 500;
 
 const memoria = [];

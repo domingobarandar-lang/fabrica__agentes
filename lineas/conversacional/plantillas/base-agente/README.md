@@ -18,6 +18,9 @@ base-agente/
 
 | Archivo | Qué hace |
 |---|---|
+| `config.js` | Lee `agente.config.json`. **El esquema del contrato está definido acá, una sola vez** |
+| `database/nucleo-db.js` | Conexión a Supabase o memoria + `sesiones`, `estado_canal`, `metricas`. Se niega a conectarse sin prefijo de tabla |
+| `database/schema-nucleo.sql` | DDL de esas tres tablas, con `{{PREFIJO}}` que sustituye `npm run schema` |
 | `agent/core.js` | Loop agéntico con tool use, cola serial por canal, timeout duro y reintentos. **Acá convergen todos los canales** |
 | `agent/llm.js` | Adapter multi-proveedor (Gemini, Groq, DeepSeek, OpenRouter, Ollama, Anthropic) |
 | `agent/memory.js` | Historial por canal con ventana deslizante |
@@ -32,18 +35,22 @@ base-agente/
 | `whatsapp/webhook.js` | Webhook de Meta con validación de firma HMAC-SHA256, fail-closed en producción |
 | `whatsapp/sender.js` | Envío por WhatsApp Cloud API + guarda de silencio |
 | `telegram/enviar.js` | Envío por Telegram + guarda de silencio |
+| `scripts/validar-config.js` | `npm run validar`: esquema, `.env` que tapa, tokens, tools y `railway.toml` al día |
+| `scripts/generar-railway.js` | `npm run railway`: escribe `railway.toml` según los canales activos |
+| `scripts/schema-nucleo.js` | `npm run schema`: el DDL con el prefijo del cliente ya sustituido |
+| `scripts/chat-local.js` | `npm run chat`: canal terminal. **MOCK por defecto**; gastar tokens exige `--real` |
 | `nixpacks.toml` | Build de Railway |
 | `.gitignore` | Mantiene `.env` fuera del repo del cliente |
-| `.env.example` | Variables del núcleo. `LLM_*` desde el día uno, nunca `ANTHROPIC_*` por defecto |
+| `.env.example` | **Solo secretos y conexiones.** El comportamiento vive en `agente.config.json` |
 | `package.json` | Dependencias del núcleo. Nombre **fijo**: un marcador en `name` rompe `npm install` |
 | `package.json.tpl` | Plantilla del `package.json` del cliente, con marcadores que sustituye el script |
 | `scripts/humo.js` | Prueba de humo: arma el overlay y verifica que el núcleo enciende |
 
-`railway.toml` **no** está en el núcleo a propósito: su `startCommand` decide el canal (`telegram/bot.js` vs `index.js`) y eso es decisión de cada cliente. Se genera desde `agente.config.json`.
+`railway.toml` **no** está en el núcleo a propósito: su `startCommand` decide el canal (`telegram/bot.js` vs `index.js`) y eso es decisión de cada cliente. Lo genera `npm run railway` desde `canales.*.activo`.
 
 ### Qué hay en `ejemplo/`
 
-`agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (solo memoria), `index.js`, `telegram/bot.js` y `evals/` (`escenarios.js` + `correr.js`). Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
+`agente.config.json`, `agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (el dominio del vertical), `index.js`, `telegram/bot.js` y `evals/` (`escenarios.js` + `correr.js`). Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
 
 Existe por una razón concreta: los archivos del núcleo **no se pueden correr solos**. `agent/core.js` pide `./prompts` y `./tools`; `agent/memory.js` pide `../database/supabase`. Sin la semilla, "el núcleo funciona" sería una afirmación sin forma de comprobarla.
 
@@ -55,7 +62,7 @@ npm install
 npm run humo
 ```
 
-Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **68 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
+Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **92 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
 
 Qué cubre, por escenario:
 
@@ -70,8 +77,57 @@ Qué cubre, por escenario:
 | 6 | Timeout duro, reintentos, y un solo mensaje puente |
 | 7 | Métricas por turno, distinguiendo derivación de silencio posterior |
 | 8 | El arnés de evals: los 8 perfiles, los 6 invariantes uno por uno (que atrapen su fallo **y** dejen pasar lo sano) y la suite completa corriendo como la corre un cliente |
+| 9 | La config: precedencia en sus tres capas, typos que son error, archivo corrupto y archivo ausente, el **fallo cerrado** del prefijo de tablas, que `.env.example` no tape la config, la identidad llegando al prompt, el `startCommand` según canales, el validador aprobando **y** rechazando, y el chat local de punta a punta |
 
 Como usa el mismo mecanismo de armado que el script de sincronización, valida el manifiesto **antes** de que se use contra un proyecto real.
+
+## Configurar un agente: `agente.config.json`
+
+Un agente **no se configura tocando código**. Todo lo que decide cómo se comporta vive en un solo archivo, versionado en el git del cliente y validado antes de arrancar:
+
+```json
+{
+  "cliente":   { "id": "petshop-lira", "nombre": "Petshop Lira", "vertical": "retail", "zona_horaria": "America/Santiago" },
+  "identidad": { "nombre_agente": "Lira", "rol": "…", "tono": "…", "no_hacer": ["…"] },
+  "canales":   { "telegram": { "activo": true, "token_env": "TELEGRAM_TOKEN" },
+                 "whatsapp": { "activo": false }, "terminal": { "activo": true } },
+  "handoff":   { "activo": true, "timeout_min": null, "max_fallos": 3, "inbox": "" },
+  "limites":   { "historial_turnos": 30, "max_tokens_respuesta": 600, "timeout_modelo_ms": 25000,
+                 "intentos_modelo": 3, "buffer_ms": 6000, "buffer_max_partes": 10,
+                 "buffer_excepciones": ["handoff", "cancelacion", "adjunto"] },
+  "datos":     { "prefijo": "petshop_lira" },
+  "metricas":  { "activas": true }
+}
+```
+
+**La precedencia, y es deliberada:**
+
+```
+variable de entorno  >  agente.config.json  >  default del núcleo
+```
+
+El entorno gana porque es la **palanca de emergencia**: apagar el handoff desde Railway a las 3 AM sin redeploy. Pero un `.env` no se versiona ni se revisa, así que `npm run validar` **denuncia toda variable que esté tapando un valor declarado**, con el valor efectivo al lado. La palanca sigue; deja de ser silenciosa.
+
+**Lo que NUNCA va en la config**: proveedor de LLM y credenciales. Eso vive en `.env` (`LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`) porque es secreto y es costo.
+
+**Un typo no se ignora en silencio.** Escribir `"limits"` por `"limites"` es un **error**, no un aviso: la configuración entera no se aplicaría y el agente seguiría andando con los defaults, que es exactamente el modo de falla que este archivo vino a matar. Config inválida = no arranca.
+
+**El prefijo de tablas no es cosmético.** El proyecto Supabase está **compartido entre agentes**: una tabla `estado_canal` sin prefijo la comparten todos los bots, y derivar a una persona en un negocio deja mudo al bot de otro si coinciden los `canal_id`. Con `datos.prefijo` basta — los tres nombres se derivan solos —, y si hay credenciales de Supabase sin prefijo resuelto, `database/nucleo-db.js` **se niega a conectarse**.
+
+Comandos:
+
+```powershell
+npm run validar   # esquema, .env que tapa, tokens, tools, railway al día
+npm run railway   # regenera railway.toml desde canales.*.activo
+npm run schema    # DDL de las tablas del núcleo con el prefijo ya puesto
+npm run chat      # canal terminal, en MOCK. `npm run chat -- --real` gasta tokens
+```
+
+Desde la fábrica, para todos los clientes de una vez:
+
+```powershell
+.\scripts\validar-config.ps1 -Todos -RaizClientes C:\clientes
+```
 
 ## Probar un agente: `npm test`
 
@@ -141,10 +197,11 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
    # LLM_BASE_URL=              # solo para openai-compat
    ```
    **Nunca asumir Anthropic por defecto**: es regla dura de `CLAUDE.md`, y ya nos mordió una vez (un agente quedó con `ANTHROPIC_*` en su `.env.example` y sin las `LLM_*`).
+2b. **Llenar `agente.config.json`** — nombre, identidad, canales, prefijo de tablas. Es lo primero que hay que dejar bien: de ahí salen el prompt, el `railway.toml` y los nombres de las tablas. `npm run validar` antes de seguir.
 3. **Escribir el producto** — acá va el tiempo:
-   - `agent/prompts.js` — identidad, alcance y reglas del rubro.
+   - `agent/prompts.js` — alcance y reglas del rubro (la identidad ya viene de la config).
    - `agent/tools.js` — las acciones del vertical. Validación de negocio **dentro** de la tool, nunca confiada al modelo. Tope duro de resultados.
-   - `database/schema.sql` + el bloque de dominio de `database/supabase.js` — las tablas del rubro.
+   - `database/schema.sql` + el bloque de dominio de `database/supabase.js` — las tablas del rubro. Las tres del núcleo (`sesiones`, `estado_canal`, `metricas`) ya vienen: `npm run schema`.
    - `evals/escenarios.js` — los escenarios. CU-* del SPEC y ADV-* adversariales. Solo el camino feliz de cada uno: los ocho perfiles los deriva el motor.
    - `evals/correr.js` — qué significa "inventar un dato" y "lista demasiado larga" en este rubro.
 4. **Verificar en mock** — `npm test`. **Siempre 0 tokens, sin excepción.** Ya no hay que confiar en que cada proyecto lo respete: `evals/motor.js` borra las credenciales del entorno antes de cargar nada, así que no existe la variable capaz de encender el modo real. Ese bug existió (`MOCK === 'true' || !ANTHROPIC_API_KEY`: bastaba una key en el `.env` para que `npm test` saliera a la API) y por eso el bloqueo está en el núcleo.
@@ -156,7 +213,12 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
 - **Un buffer sin lista de excepciones es un bug esperando.** Cuando se agrupan mensajes hay que preguntarse **qué acción NO puede esperar**; la respuesta casi siempre incluye las acciones irreversibles: pedir un humano, cancelar, pagar. Si el cliente pide una persona y el proceso se reinicia durante la ventana, pidió ayuda y nadie se enteró. Por eso `handoff` está forzado en código como excepción y hay una verificación en el humo que falla si alguien lo saca.
 - **La derivación a un humano es definitiva.** El default es `HANDOFF_TIMEOUT_MIN` vacío: el bot no vuelve solo. Reactivarlo tras 30 min de silencio suena razonable y es una regresión grave — el cliente descubre que la "persona" que le prometieron era un bot otra vez. Que vuelva es decisión del cliente, y hay que conversarla.
 - **Nada de `unref()` en el timer del buffer.** La primera versión lo tenía "para no retrasar el apagado" y la prueba de humo murió en silencio: Node se va cuando solo quedan timers con `unref`, así que el grupo pendiente nunca se procesa. En producción eso es un mensaje de un cliente que se pierde sin dejar rastro.
-- **La config del núcleo se lee en cada llamada, no al cargar el módulo.** Cuando eran `const` de arriba, el arnés cambiaba la variable, el núcleo seguía con el default, y dos verificaciones pasaron por el motivo equivocado. Si agregas una variable nueva, ponla como función.
+- **La config del núcleo se lee en cada llamada, no al cargar el módulo.** Cuando eran `const` de arriba, el arnés cambiaba la variable, el núcleo seguía con el default, y dos verificaciones pasaron por el motivo equivocado. Si agregas una clave nueva, léela con `config.valor(...)` dentro de una función.
+- **Un archivo de configuración corrupto tiene que romper SIEMPRE, no según qué clave se lea primero.** `config.valor()` miraba el entorno antes que el archivo: con `BUFFER_MS` puesto en Railway, un `agente.config.json` roto no rompía al arrancar y reventaba mucho después, en la primera clave que nadie estuviera pisando. Ahora el archivo se lee y valida primero, aunque para esa clave gane el entorno.
+- **La QA prueba la config que se ENTREGA, no el `.env` de quien la corre.** Con un `.env` que traía `HANDOFF_ACTIVO=false`, la suite pasó de 32/32 a 28/32. Rojo es la dirección segura, pero el problema es que dos personas con el mismo repo obtenían resultados distintos y lo que se probó no quedaba registrado en ninguna parte. `evals/motor.js` borra todos los overrides del contrato antes de cargar nada, igual que las credenciales.
+- **`.env.example` no puede traer variables de comportamiento descomentadas.** Copiarlo a `.env` —que es lo que dice este README— taparía la configuración entera y el archivo declarativo no serviría de nada. Hay una verificación estructural en el humo que falla si alguien descomenta una.
+- **Un aviso que reporta mal el valor efectivo es peor que no avisar.** El validador decía "`HANDOFF_ACTIVO` pisa `handoff.activo` (queda en true)" con el `.env` diciendo `false`, porque no cargaba `dotenv`. Detectaba el problema y mentía sobre su consecuencia.
+- **Los `.ps1` de la fábrica van con BOM UTF-8.** PowerShell 5.1 lee un script sin BOM como ANSI y los acentos salen rotos. Le pasaba al hook anti-amnesia desde que existe.
 - **Los triggers de handoff tienen que tolerar faltas de ortografía.** Las regex exigían `hablar` y `quiero` literales, así que "kiero ablar con alguien" **no derivaba** — el falso negativo que el propio archivo declara inaceptable, y lo destapó el perfil `ortografia` la primera vez que corrió. Si agregas un trigger, escríbelo ya tolerante: el arnés lo va a probar mal escrito. Y ponle `\b`: sin él, `abar` casa dentro de "acabar".
 - **Para verificar que un buffer agrupa, cuenta TURNOS, no llamadas al modelo.** Un turno que usa una herramienta llama al modelo dos veces por diseño (pedirla y responder con su resultado). Contar llamadas da rojo en cualquier escenario con tools — o sea, en los que importan.
 - **Un invariante que no se puede evaluar se marca OMITIDA, no verde.** Si el cliente no declaró `patronId`, la regla del tope de resultados no corrió: contarla como aprobada es inflar la cobertura con checks que nunca se ejecutaron.

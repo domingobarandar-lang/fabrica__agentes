@@ -3,10 +3,13 @@
 // únicamente dentro del turno en agent/core.js.
 
 const { db } = require('../database/supabase');
+const config = require('../config');
 
 // Ventana deslizante: últimos N mensajes (user+assistant). Suficiente contexto
-// para una conversación de agendamiento sin inflar el prompt.
-const MAX_MENSAJES = 30;
+// para una conversación de agendamiento sin inflar el prompt. Un rubro que
+// necesite memoria más larga lo sube en `limites.historial_turnos`, sabiendo
+// que cada turno extra se paga en tokens de entrada en CADA llamada.
+const maxMensajes = () => config.valor('limites.historial_turnos');
 
 /**
  * @param {string} telefono
@@ -30,7 +33,7 @@ async function persistirInteraccion(telefono, historialPrevio, mensajeUsuario, r
     ...historialPrevio,
     { role: 'user', content: mensajeUsuario },
     { role: 'assistant', content: respuestaTexto },
-  ].slice(-MAX_MENSAJES);
+  ].slice(-maxMensajes());
   try {
     await db.sesiones.upsert(telefono, messages);
   } catch (error) {

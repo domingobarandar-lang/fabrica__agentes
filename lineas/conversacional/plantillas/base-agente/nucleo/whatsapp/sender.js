@@ -3,16 +3,27 @@
 
 const axios = require('axios');
 const { dividirMensaje } = require('../lib/texto');
+const config = require('../config');
 
 const API_VERSION = 'v19.0';
 
-const modoDemo = () => !process.env.WHATSAPP_TOKEN;
+// Indirección a propósito: agente.config.json declara el NOMBRE de la variable
+// (`canales.whatsapp.token_env`) y el `.env` guarda el valor. Así un agente que
+// ya corre con WHATSAPP_TOKEN_CITAS no tiene que renombrar nada para adoptar la
+// config, y el secreto nunca entra a un archivo versionado.
+const credenciales = () => ({
+  token:   process.env[config.valor('canales.whatsapp.token_env')] || '',
+  phoneId: process.env[config.valor('canales.whatsapp.phone_id_env')] || '',
+});
+
+const modoDemo = () => !credenciales().token;
 
 function clienteWhatsApp() {
+  const { token, phoneId } = credenciales();
   return axios.create({
-    baseURL: `https://graph.facebook.com/${API_VERSION}/${process.env.WHATSAPP_PHONE_ID}/messages`,
+    baseURL: `https://graph.facebook.com/${API_VERSION}/${phoneId}/messages`,
     headers: {
-      Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     timeout: 15_000,

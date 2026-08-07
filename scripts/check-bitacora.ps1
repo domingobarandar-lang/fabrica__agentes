@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Recordatorio del protocolo anti-amnesia. MODO AVISO — nunca bloquea, siempre sale 0.
 

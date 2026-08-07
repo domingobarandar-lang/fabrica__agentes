@@ -10,6 +10,8 @@ require('dotenv').config();
 const express = require('express');
 
 const webhookRouter = require('./whatsapp/webhook');
+const config = require('./config');
+const { modo: modoDb } = require('./database/supabase');
 
 const app = express();
 
@@ -18,17 +20,33 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 
+// Estado, útil para el health check de Railway y para saber de un vistazo con
+// qué configuración quedó corriendo el servicio. Sin secretos: el nombre de la
+// variable del token sí, su valor jamás.
 app.get('/', (_req, res) => {
-  res.json({ status: 'ok', servicio: 'Agente de ejemplo (semilla de la Fábrica)', db: 'memoria' });
+  res.json({
+    status: 'ok',
+    agente: config.valor('cliente.nombre'),
+    cliente: config.valor('cliente.id'),
+    db: modoDb,
+    canales: {
+      whatsapp: config.valor('canales.whatsapp.activo'),
+      telegram: config.valor('canales.telegram.activo'),
+    },
+    handoff: config.valor('handoff.activo'),
+  });
 });
 
 app.use('/webhook', webhookRouter);
 
 const PORT = process.env.PORT || 3300;
 app.listen(PORT, () => {
-  console.log(`[Servidor] Agente de ejemplo escuchando en puerto ${PORT}`);
-  console.log('[DB] Base EN MEMORIA: todo se pierde al reiniciar. Es la semilla, no producción.');
-  if (!process.env.WHATSAPP_TOKEN) {
-    console.warn('[WhatsApp] WHATSAPP_TOKEN no configurado — los mensajes salientes se imprimen por consola.');
+  console.log(`[Servidor] ${config.valor('cliente.nombre')} escuchando en puerto ${PORT}`);
+  if (modoDb === 'memoria') {
+    console.log('[DB] Base EN MEMORIA: todo se pierde al reiniciar. Sirve para demo, no para producción.');
+  }
+  const varToken = config.valor('canales.whatsapp.token_env');
+  if (!process.env[varToken]) {
+    console.warn(`[WhatsApp] ${varToken} no configurado — los mensajes salientes se imprimen por consola.`);
   }
 });

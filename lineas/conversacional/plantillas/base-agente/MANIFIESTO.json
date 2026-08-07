@@ -1,8 +1,11 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "descripcion": "Mapa origen→destino del núcleo conversacional. Lo consumen sincronizar-nucleo.ps1 (para instalar en un proyecto) y nucleo/scripts/humo.js (para armar el overlay de prueba). Una sola fuente de verdad: si un archivo no está acá, no viaja.",
 
   "nucleo": [
+    { "origen": "nucleo/config.js",            "destino": "config.js",            "nota": "lee agente.config.json; precedencia .env > config > default. Esquema del contrato, definido UNA vez" },
+    { "origen": "nucleo/database/nucleo-db.js", "destino": "database/nucleo-db.js", "nota": "conexión Supabase o memoria + sesiones/estado_canal/metricas. Se niega a conectar sin prefijo de tabla" },
+    { "origen": "nucleo/database/schema-nucleo.sql", "destino": "database/schema-nucleo.sql", "nota": "DDL de las 3 tablas del núcleo, con {{PREFIJO}} que sustituye scripts/schema-nucleo.js" },
     { "origen": "nucleo/agent/core.js",        "destino": "agent/core.js",        "nota": "loop agéntico con tool use; acá convergen todos los canales" },
     { "origen": "nucleo/agent/llm.js",         "destino": "agent/llm.js",         "nota": "adapter multi-proveedor" },
     { "origen": "nucleo/agent/memory.js",      "destino": "agent/memory.js",      "nota": "historial por canal" },
@@ -17,12 +20,17 @@
     { "origen": "nucleo/whatsapp/webhook.js",  "destino": "whatsapp/webhook.js",  "nota": "webhook Meta + firma HMAC" },
     { "origen": "nucleo/whatsapp/sender.js",   "destino": "whatsapp/sender.js",   "nota": "envío WhatsApp + guarda de silencio" },
     { "origen": "nucleo/telegram/enviar.js",   "destino": "telegram/enviar.js",   "nota": "envío Telegram + guarda de silencio" },
+    { "origen": "nucleo/scripts/validar-config.js",   "destino": "scripts/validar-config.js",   "nota": "npm run validar: esquema + .env que tapa + tokens + tools + railway al día" },
+    { "origen": "nucleo/scripts/generar-railway.js",  "destino": "scripts/generar-railway.js",  "nota": "npm run railway: genera railway.toml desde canales.*.activo" },
+    { "origen": "nucleo/scripts/schema-nucleo.js",    "destino": "scripts/schema-nucleo.js",    "nota": "npm run schema: DDL con el prefijo del cliente ya puesto" },
+    { "origen": "nucleo/scripts/chat-local.js",       "destino": "scripts/chat-local.js",       "nota": "npm run chat: canal terminal. MOCK por defecto, --real para gastar tokens a propósito" },
     { "origen": "nucleo/nixpacks.toml",        "destino": "nixpacks.toml",        "nota": "build Railway" },
     { "origen": "nucleo/.gitignore",           "destino": ".gitignore",           "nota": "mantiene .env fuera del repo del cliente" },
-    { "origen": "nucleo/.env.example",         "destino": ".env.example",         "nota": "variables del núcleo; LLM_* desde el día uno, nunca ANTHROPIC_* por defecto" }
+    { "origen": "nucleo/.env.example",         "destino": ".env.example",         "nota": "SOLO secretos y conexiones; el comportamiento vive en agente.config.json" }
   ],
 
   "ejemplo": [
+    { "origen": "ejemplo/agente.config.json",   "destino": "agente.config.json" },
     { "origen": "ejemplo/agent/prompts.js",     "destino": "agent/prompts.js" },
     { "origen": "ejemplo/agent/tools.js",       "destino": "agent/tools.js" },
     { "origen": "ejemplo/database/supabase.js", "destino": "database/supabase.js" },
@@ -49,7 +57,9 @@
   ],
 
   "notas": {
-    "railway.toml": "NO viaja en el núcleo: su startCommand es una decisión de canal por cliente (telegram/bot.js vs index.js). Se genera desde agente.config.json.",
+    "railway.toml": "NO viaja en el núcleo: su startCommand es una decisión de canal por cliente (telegram/bot.js vs index.js). Lo genera `npm run railway` desde canales.*.activo de agente.config.json.",
+    "agente.config.json": "Viaja SOLO en la capa 'ejemplo' (semilla) y está en 'nunca_tocar': un proyecto lo recibe una vez al nacer y desde ahí es del cliente. Sincronizar el núcleo jamás lo pisa. El ESQUEMA que lo valida sí es del núcleo y vive en config.js.",
+    "database": "nucleo-db.js y schema-nucleo.sql son del núcleo (conexión, memoria, sesiones/estado_canal/metricas). supabase.js y schema.sql son del cliente: ahí viven los repositorios del vertical. El punto de unión es `{ ...crearBaseNucleo(), ...dominio }`.",
     "ejemplo": "Cumple dos roles: overlay de prueba para nucleo/scripts/humo.js, y semilla que nuevo-proyecto.ps1 deposita para que un proyecto nuevo arranque y responda desde el minuto uno.",
     "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como destino en 'nucleo'. Es una guarda contra pisar el producto del cliente. Implementada de verdad desde 2026-08-06: antes estaba solo escrita acá.",
     "evals": "El motor, los perfiles y los invariantes son NÚCLEO (iguales para todos). Los escenarios y la config del rubro son del CLIENTE y por eso están en 'ejemplo' y en 'nunca_tocar': se escriben una vez por proyecto y no se pisan nunca."

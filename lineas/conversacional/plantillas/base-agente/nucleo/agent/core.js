@@ -16,6 +16,7 @@ const { cargarHistorial, persistirInteraccion } = require('./memory');
 const handoff  = require('./handoff');
 const buffer   = require('./buffer');
 const metricas = require('./metricas');
+const config   = require('../config');
 
 // Cliente perezoso: sin credenciales el constructor lanza error, y este módulo
 // también se carga desde los simuladores locales (chat / tests / telegram mock)
@@ -35,8 +36,12 @@ function obtenerCliente() {
 // buffer.js, handoff.js y metricas.js, y por una razón que ya se pagó: cuando
 // esto eran `const` de arriba, el arnés cambiaba la variable y el núcleo seguía
 // usando el default. Dos verificaciones dieron verde por el motivo equivocado.
+//
+// El MODELO no sale de agente.config.json a propósito: el proveedor y el modelo
+// son credencial y costo, viven en `.env` (LLM_PROVIDER / LLM_MODEL) y los lee
+// agent/llm.js. Este default solo aplica al camino nativo de Anthropic.
 const modelo         = () => process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001';
-const maxTokens      = () => Number(process.env.MAX_TOKENS_RESPUESTA ?? 600); // es mensajería, no un ensayo
+const maxTokens      = () => config.valor('limites.max_tokens_respuesta'); // es mensajería, no un ensayo
 const MAX_RONDAS_TOOL = 6;    // límite de rondas de tool use (evita bucles)
 
 // Timeout duro por llamada al modelo, con AbortController: sin esto una llamada
@@ -45,8 +50,8 @@ const MAX_RONDAS_TOOL = 6;    // límite de rondas de tool use (evita bucles)
 // (la directiva decía 20 s y 1 reintento, sin evidencia detrás).
 // "3 reintentos" se implementa como 3 INTENTOS TOTALES a propósito: cuatro
 // llamadas de 25 s son 100 s de espera, y a esa altura el cliente ya se fue.
-const timeoutModeloMs = () => Number(process.env.TIMEOUT_MODELO_MS ?? 25_000);
-const intentosModelo  = () => Math.max(1, Number(process.env.INTENTOS_MODELO ?? 3));
+const timeoutModeloMs = () => config.valor('limites.timeout_modelo_ms');
+const intentosModelo  = () => Math.max(1, config.valor('limites.intentos_modelo'));
 const ESPERAS_REINTENTO_MS = [1500, 3000, 5000];
 
 const FALLBACK_VACIO = 'Perfecto, queda anotado. ¿Te ayudo con algo más? 😊';

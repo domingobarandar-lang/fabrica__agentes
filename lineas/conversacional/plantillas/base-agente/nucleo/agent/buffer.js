@@ -19,26 +19,23 @@
 // directiva no tenía tráfico real detrás.
 
 const { esPeticionDeHumano } = require('./handoff');
+const config = require('../config');
 
 // La config se lee en cada llamada, no al cargar el módulo: así el arnés puede
 // probar varias ventanas en una corrida sin recargar Node, y un cambio de
 // variable en Railway toma efecto sin redeploy.
-const ventanaMs = () => Number(process.env.BUFFER_MS ?? 6000);
+const ventanaMs = () => config.valor('limites.buffer_ms');
 
 // Tope de seguridad: si alguien manda 30 mensajes seguidos, se procesa igual.
-const maxPartes = () => Number(process.env.BUFFER_MAX_PARTES ?? 10);
+const maxPartes = () => config.valor('limites.buffer_max_partes');
 
-// Excepciones configurables por entorno. `handoff` NO se puede sacar: se fuerza
-// abajo. Sacarla es exactamente el bug que Gesta encontró en producción, y hay
-// una verificación en la prueba de humo que falla si alguien lo intenta.
+// Excepciones configurables (`limites.buffer_excepciones`, o BUFFER_EXCEPCIONES
+// en el entorno). `handoff` NO se puede sacar: se fuerza abajo. Sacarla es
+// exactamente el bug que Gesta encontró en producción, y hay una verificación
+// en la prueba de humo que falla si alguien lo intenta.
 const EXCEPCIONES_OBLIGATORIAS = ['handoff'];
-const excepciones = () => {
-  const crudo = process.env.BUFFER_EXCEPCIONES;
-  const pedidas = crudo == null
-    ? ['handoff', 'cancelacion', 'adjunto']
-    : crudo.split(',').map((s) => s.trim()).filter(Boolean);
-  return new Set([...pedidas, ...EXCEPCIONES_OBLIGATORIAS]);
-};
+const excepciones = () =>
+  new Set([...config.valor('limites.buffer_excepciones'), ...EXCEPCIONES_OBLIGATORIAS]);
 
 const RE_CANCELACION = /\b(cancel|anul|no vengo|no voy a ir|no podr[eé] ir|dar de baja|devoluci[oó]n|reembols)\w*/i;
 

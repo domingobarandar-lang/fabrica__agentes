@@ -20,10 +20,12 @@ if (!globalThis.WebSocket) {
 
 require('dotenv').config();
 
+const config = require('../config');
+
 // El nombre de la variable se declara en agente.config.json (canales.telegram
-// .token_env) para no obligar a renombrar variables en agentes ya en uso.
-const NOMBRE_VAR_TOKEN = process.env.TELEGRAM_TOKEN_VAR || 'TELEGRAM_TOKEN';
-const TOKEN = process.env[NOMBRE_VAR_TOKEN];
+// .token_env) para no obligar a renombrar variables en agentes ya en uso; el
+// valor vive en .env y nunca entra a un archivo versionado.
+const { nombreVar: NOMBRE_VAR_TOKEN, token: TOKEN } = config.tokenDe('telegram');
 
 const MODO_MOCK =
   process.env.MOCK === 'true' ||
@@ -31,7 +33,8 @@ const MODO_MOCK =
   !TOKEN;
 
 const SALUDO =
-  '¡Hola! Soy el asistente de ejemplo de la Fábrica 😊 Puedo contarte el horario de atención. ¿Qué necesitas?';
+  `¡Hola! Soy ${config.valor('identidad.nombre_agente') || 'el asistente'} de ` +
+  `${config.valor('cliente.nombre')} 😊 Puedo contarte el horario de atención. ¿Qué necesitas?`;
 
 const idConversacion = (chatId) => `tg${chatId}`;
 

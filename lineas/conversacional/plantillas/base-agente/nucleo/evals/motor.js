@@ -26,7 +26,22 @@ delete process.env.LLM_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.TELEGRAM_BOT_TOKEN;
 delete process.env.WHATSAPP_TOKEN;
-process.env.HANDOFF_INBOX = '';
+
+// ─── LA QA PRUEBA LA CONFIG QUE SE ENTREGA ───────────────────────────────────
+// Y por eso se borran también los overrides de entorno del contrato. La
+// precedencia .env > agente.config.json es correcta en producción (palanca sin
+// redeploy), pero en QA convierte la suite en algo que depende del .env de
+// quien la corre: dos personas con el mismo repo obtienen resultados distintos,
+// y "pasó en mi máquina" deja de significar nada. Peor: el .env no se versiona,
+// así que lo que se probó no queda registrado en ninguna parte.
+// Se descubrió corriendo la suite con un .env que traía HANDOFF_ACTIVO=false —
+// cuatro escenarios en rojo por una variable que no está en ningún archivo
+// revisado. Acá adentro manda el archivo, punto.
+// (BUFFER_MS se borra igual: el motor lo fija él mismo, perfil por perfil.)
+const config = require('../config'); // sin efectos al cargar: solo lee el JSON cuando se le pregunta
+for (const def of Object.values(config.ESQUEMA)) {
+  if (def.env) delete process.env[def.env];
+}
 
 const { processMessage, _setClienteParaTests } = require('../agent/core');
 const { MENSAJE_DERIVACION } = require('../agent/handoff');
@@ -37,16 +52,18 @@ const { db, resetDemo } = require('../database/supabase');
 const { cargarCatalogo, derivar } = require('./perfiles');
 const { construirReglas, OMITIDA } = require('./reglas');
 
-// ─── Fechas relativas (zona horaria de Chile) ────────────────────────────────
+// ─── Fechas relativas (zona horaria del cliente) ─────────────────────────────
 // Los escenarios no pueden traer fechas fijas: "el lunes" tiene que seguir
-// siendo el próximo lunes dentro de seis meses.
+// siendo el próximo lunes dentro de seis meses. La zona sale de
+// `cliente.zona_horaria`: un agente en otro país probaba con el calendario de
+// Chile y el escenario "hoy" podía caer en otro día.
 
-const TZ = 'America/Santiago';
+const zona = () => config.valor('cliente.zona_horaria');
 const DIAS  = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
                'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-const hoyChile = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+const hoyChile = () => new Date().toLocaleDateString('en-CA', { timeZone: zona() });
 
 function addDias(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -175,15 +192,17 @@ function crearMock() {
  * @param {string[]}[cfg.perfilesExtra]   rutas a catálogos JSON propios del cliente
  */
 function crearMotor(cfg = {}) {
-  const config = {
-    nombre: cfg.nombre || 'Agente',
+  // `nombre` sale de agente.config.json si el cliente no lo pasa: el encabezado
+  // del reporte dice de quién es la suite sin repetir el dato en dos archivos.
+  const configMotor = {
+    nombre: cfg.nombre || config.valor('cliente.nombre'),
     maxChars: cfg.maxChars ?? 600,
     patronDato: cfg.patronDato === null ? null : (cfg.patronDato ?? /\$\s?\d[\d.,]*/g),
     ...cfg,
   };
 
   const catalogo = cargarCatalogo(cfg.perfilesExtra || []);
-  const reglas = construirReglas(config);
+  const reglas = construirReglas(configMotor);
   const mock = crearMock();
   _setClienteParaTests(mock.cliente);
 
@@ -209,7 +228,7 @@ function crearMotor(cfg = {}) {
     const casos = escenarios.filter((e) => !soloEscenario || e.nombre.includes(soloEscenario));
 
     console.log('═'.repeat(74));
-    console.log(`Evals — ${config.nombre}   ·   MOCK siempre: 0 tokens, sin credenciales, sin red`);
+    console.log(`Evals — ${configMotor.nombre}   ·   MOCK siempre: 0 tokens, sin credenciales, sin red`);
     console.log(`Hoy (Chile): ${fechas.hoy}   ·   ${casos.length} escenarios × ${perfiles.length} perfiles`);
     console.log('═'.repeat(74));
 

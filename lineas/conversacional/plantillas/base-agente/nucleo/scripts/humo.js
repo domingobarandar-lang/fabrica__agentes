@@ -479,6 +479,157 @@ async function main() {
   check(!/ANTHROPIC_API_KEY|LLM_API_KEY|SUPABASE/.test(salidaEvals),
     'la suite no menciona credenciales: el bloqueo de efectos externos se aplicó antes de cargar nada');
 
+  // ── 9. La superficie de configuración ───────────────────────────────────────
+  // agente.config.json es lo que un cliente edita sin tocar código, así que sus
+  // modos de falla son de cliente: un typo que no hace nada, un .env que tapa el
+  // archivo entero, o una tabla sin prefijo en un Supabase compartido.
+  console.log('\n9. agente.config.json: precedencia, validación y fallo cerrado');
+
+  const configMod = cargar('config.js');
+  const rutaConfigPrueba = path.join(DIR_PRUEBA, 'agente.config.json');
+
+  check(configMod.existe() && configMod.valor('cliente.id') === 'ejemplo',
+    'el proyecto encuentra su agente.config.json y lee la identidad del cliente');
+  check(configMod.valor('datos.tabla_sesiones') === 'ejemplo_sesiones',
+    'los nombres de tabla se DERIVAN del prefijo: no hay forma de olvidar prefijar una');
+
+  // Precedencia: entorno > archivo > default. Se prueba en las tres capas con
+  // la misma clave, porque el orden entre dos de ellas no dice nada del tercero.
+  check(configMod.valor('handoff.max_fallos') === 3, 'sin variable de entorno, manda el archivo (max_fallos = 3)');
+  process.env.HANDOFF_MAX_FALLOS = '7';
+  check(configMod.valor('handoff.max_fallos') === 7, 'con variable de entorno, el entorno pisa el archivo (la palanca sin redeploy)');
+  process.env.HANDOFF_MAX_FALLOS = 'siete';
+  check(configMod.valor('handoff.max_fallos') === 3,
+    'una variable de entorno con basura se ignora y se vuelve al archivo, en vez de propagar un NaN');
+  delete process.env.HANDOFF_MAX_FALLOS;
+
+  // EL BUG QUE ESTE ARCHIVO VINO A MATAR: una clave mal escrita que no hace
+  // nada y no avisa. El cliente cree que configuró algo y el agente sigue igual.
+  const typo = configMod.validar({
+    cliente: { id: 'x', nombre: 'X' }, datos: { prefijo: 'x' },
+    limits: { buffer_ms: 0 },
+  });
+  check(typo.errores.some((e) => /limits/.test(e)),
+    'un bloque mal escrito ("limits" por "limites") es ERROR, no se ignora en silencio');
+  const typoHoja = configMod.validar({
+    cliente: { id: 'x', nombre: 'X' }, datos: { prefijo: 'x' },
+    limites: { bufer_ms: 0 },
+  });
+  check(typoHoja.errores.some((e) => /bufer_ms/.test(e)), 'y una clave mal escrita dentro de un bloque válido, también');
+  check(configMod.validar({ cliente: { nombre: 'X' }, datos: {} }).errores.length >= 2,
+    'faltar un campo requerido (cliente.id, datos.prefijo) es error');
+  check(configMod.validar({ cliente: { id: 'x', nombre: 'X' }, datos: { prefijo: 'Mi Tabla' } })
+          .errores.some((e) => /prefijo/.test(e)),
+    'un prefijo que Postgres rechazaría se atrapa acá y no en el primer INSERT en producción');
+
+  // El agente NO arranca con una config rota: mejor caerse que atender clientes
+  // con una configuración que nadie decidió.
+  const configBuena = fs.readFileSync(rutaConfigPrueba, 'utf8');
+  fs.writeFileSync(rutaConfigPrueba, '{ esto no es json', 'utf8');
+  configMod._recargar();
+  let rompio = null;
+  // A propósito una clave que el entorno SÍ está pisando (BUFFER_MS='0' desde el
+  // escenario 5): la config rota tiene que detectarse igual. Cuando el archivo
+  // se leía después del entorno, el agente arrancaba tan campante y reventaba
+  // más tarde, en la primera clave que nadie estuviera pisando.
+  try { configMod.valor('limites.buffer_ms'); } catch (e) { rompio = e; }
+  check(rompio !== null && /no es JSON válido/i.test(rompio.message),
+    'con el archivo corrupto el núcleo se cae con un mensaje claro, aunque esa clave venga del entorno');
+
+  // Sin archivo: defaults del núcleo. Es lo que permite correr el núcleo solo,
+  // y es exactamente el caso donde las tablas quedarían SIN prefijo.
+  fs.rmSync(rutaConfigPrueba);
+  configMod._recargar();
+  check(configMod.valor('cliente.nombre') === 'Agente',
+    'sin archivo, el núcleo corre con sus defaults en vez de morirse (el nombre deja de ser el de la semilla)');
+
+  const { crearBaseNucleo } = cargar('database', 'nucleo-db.js');
+  process.env.SUPABASE_URL = 'https://ejemplo.supabase.co';
+  process.env.SUPABASE_SERVICE_KEY = 'clave-de-mentira';
+  let cerrado = null;
+  try { crearBaseNucleo(); } catch (e) { cerrado = e; }
+  check(cerrado !== null && /prefijo/i.test(cerrado.message),
+    'FALLA CERRADO: con credenciales de Supabase y sin prefijo, se niega a conectarse a una tabla compartida');
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_KEY;
+
+  fs.writeFileSync(rutaConfigPrueba, configBuena, 'utf8');
+  configMod._recargar();
+
+  // La trampa que casi se cuela: .env.example traía BUFFER_MS, HANDOFF_* y
+  // MAX_TOKENS_* descomentados. Copiarlo a .env —que es lo que dice el
+  // README— habría tapado la config entera y este paso no habría servido de
+  // nada. La guarda es estructural, no un recordatorio.
+  const varsEsquema = new Set(
+    Object.values(configMod.ESQUEMA).map((d) => d.env).filter(Boolean)
+  );
+  const declaradasEnEjemplo = fs.readFileSync(path.join(DIR_PRUEBA, '.env.example'), 'utf8')
+    .split('\n').map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'))
+    .map((l) => l.split('=')[0].trim())
+    .filter((v) => varsEsquema.has(v));
+  check(declaradasEnEjemplo.length === 0,
+    `.env.example no trae variables de comportamiento descomentadas (copiarlo taparía la config): ${declaradasEnEjemplo.join(', ') || 'ninguna'}`);
+
+  // La identidad del agente sale de la config, no de una cadena en el código.
+  const { buildSystemPrompt } = cargar('agent', 'prompts.js');
+  const prompt = buildSystemPrompt();
+  check(prompt.includes('el asistente de ejemplo') && prompt.includes('Negocio de ejemplo'),
+    'el prompt de sistema toma nombre y negocio de agente.config.json');
+  check(/no manejo|no las maneja|prometer reservas/i.test(prompt),
+    'y los límites de "identidad.no_hacer" llegan al prompt como reglas explícitas');
+
+  // railway.toml: el startCommand sale de los canales activos. Equivocarlo
+  // levanta el proceso que no atiende, sin ningún error visible.
+  const { comandoDeArranque } = cargar('scripts', 'generar-railway.js');
+  check(comandoDeArranque({ 'canales.telegram.activo': true, 'canales.whatsapp.activo': false }) === 'node telegram/bot.js',
+    'solo Telegram activo → arranca el bot de Telegram');
+  check(comandoDeArranque({ 'canales.telegram.activo': true, 'canales.whatsapp.activo': true }) === 'node index.js',
+    'con WhatsApp activo → arranca el servidor HTTP, que es lo que Meta necesita');
+  check(comandoDeArranque({ 'canales.telegram.activo': false, 'canales.whatsapp.activo': false }) === null,
+    'sin canal desplegable no inventa un arranque: avisa que no hay nada que desplegar');
+
+  // El validador, corriendo como lo corre un cliente (`npm run validar`).
+  const validador = spawnSync(process.execPath, ['scripts/validar-config.js'], {
+    cwd: DIR_PRUEBA, encoding: 'utf8', env: { ...process.env },
+  });
+  const salidaVal = `${validador.stdout || ''}${validador.stderr || ''}`;
+  check(validador.status === 0,
+    `el validador aprueba la config de la semilla (salida ${validador.status})${validador.status === 0 ? '' : `\n${salidaVal.slice(-800)}`}`);
+  check(/ejemplo_sesiones/.test(salidaVal), 'y muestra con qué tablas va a trabajar el agente');
+
+  // La QA prueba la config que se ENTREGA, no el .env de quien la corre. Se
+  // lanza la suite completa con un override hostil en el entorno: si se colara,
+  // los escenarios del perfil `pide_humano` se caerían (fue exactamente lo que
+  // pasó la primera vez que se probó con un .env real: 28/32).
+  const evalsConOverride = spawnSync(process.execPath, ['evals/correr.js'], {
+    cwd: DIR_PRUEBA, encoding: 'utf8',
+    env: { ...process.env, HANDOFF_ACTIVO: 'false', MAX_TOKENS_RESPUESTA: '1' },
+  });
+  const resumenHostil = `${evalsConOverride.stdout || ''}`.match(/RESUMEN: (\d+)\/(\d+) corridas OK/);
+  check(evalsConOverride.status === 0 && !!resumenHostil && resumenHostil[1] === resumenHostil[2],
+    `un .env con HANDOFF_ACTIVO=false NO cambia la QA: la suite prueba el archivo versionado (${resumenHostil ? `${resumenHostil[1]}/${resumenHostil[2]}` : 'sin resumen'})`);
+
+  // El canal terminal (`npm run chat`) es lo que ve un dueño en una demo antes
+  // de firmar. Se corre entero, con la entrada terminándose de golpe: así fue
+  // como apareció un stack trace de Node justo al final de la conversación.
+  const chat = spawnSync(process.execPath, ['scripts/chat-local.js'], {
+    cwd: DIR_PRUEBA, encoding: 'utf8', input: 'hola\n', env: { ...process.env },
+  });
+  const salidaChat = `${chat.stdout || ''}${chat.stderr || ''}`;
+  check(chat.status === 0 && !/Error:|at Interface/.test(salidaChat),
+    'el chat local termina limpio cuando se corta la entrada, sin stack trace en pantalla');
+  check(/MODO MOCK/.test(salidaChat) && /mock\)/.test(salidaChat),
+    'y arranca en MOCK: gastar tokens exige escribir --real, no pasa por descuido');
+
+  fs.writeFileSync(rutaConfigPrueba, JSON.stringify({ cliente: { id: 'x' }, limits: {} }), 'utf8');
+  const validadorRojo = spawnSync(process.execPath, ['scripts/validar-config.js'], {
+    cwd: DIR_PRUEBA, encoding: 'utf8', env: { ...process.env },
+  });
+  check(validadorRojo.status === 1, 'y RECHAZA una config rota con código 1 (config inválida = no compila)');
+  fs.writeFileSync(rutaConfigPrueba, configBuena, 'utf8');
+  configMod._recargar();
+
   // ── Resultado ───────────────────────────────────────────────────────────────
   resetDemo();
   fs.rmSync(DIR_PRUEBA, { recursive: true, force: true });
