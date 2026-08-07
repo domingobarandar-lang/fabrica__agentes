@@ -23,6 +23,9 @@
 // ctx.respuestas[i] siempre apunta al turno i de ESTA lista, aunque el perfil
 // haya insertado turnos en medio. Por eso los expect() no hay que escribirlos
 // ocho veces.
+//
+// En ctx también hay `ctx.systemPrompt`: el prompt tal como le llegó al modelo.
+// Sirve para comprobar lo que NO tiene que estar ahí (ver CU-4).
 
 module.exports = [
   {
@@ -91,6 +94,45 @@ module.exports = [
       const r = ctx.respuestas[0];
       check(/no lo tengo|no inventar/i.test(r), 'No admite que no tiene el dato');
       check(!/s[ií],? (abrimos|atendemos) los domingos/i.test(r), 'BUG: inventó que abren el domingo');
+    },
+  },
+
+  {
+    // El caso de uso que justifica todo el conocimiento por carpetas: el dato
+    // NO está en el prompt ni en ninguna tool del cliente. El agente lo carga
+    // cuando lo necesita, y el negocio lo edita en un archivo de texto.
+    nombre: 'CU-4: consulta que vive en la carpeta de conocimiento',
+    turnos: [
+      {
+        user: '¿se puede pagar con tarjeta?',
+        modelo: [
+          { tools: [{ name: 'cargar_conocimiento', input: { intencion: 'formas_de_pago' } }] },
+          {
+            text: (c) => {
+              const r = c.lastResult('cargar_conocimiento');
+              return /débito/i.test(r?.contenido || '')
+                ? 'Sí 😊 aceptamos débito, crédito y transferencia. Con crédito puedes hasta en 3 cuotas sin interés.'
+                : 'Eso no lo tengo cargado, prefiero no inventarte.';
+            },
+          },
+        ],
+      },
+    ],
+    async expect(ctx, check) {
+      check(/débito|transferencia/i.test(ctx.respuestas[0]),
+        'No entregó lo que devolvió cargar_conocimiento');
+      check(
+        ctx.toolLog.some((e) => e.name === 'cargar_conocimiento' && !e.inexistente),
+        'No cargó el conocimiento: o respondió de memoria, o la herramienta no está disponible'
+      );
+      // LA PROPIEDAD QUE SE ESTÁ PROBANDO, y que es fácil de romper sin darse
+      // cuenta: el prompt anuncia el tema, pero NO trae el texto. Si alguien
+      // pega el archivo dentro de prompts.js, esto se pone rojo — y con él el
+      // invariante `conocimiento_fuera_del_prompt` del núcleo.
+      check(/formas_de_pago/.test(ctx.systemPrompt),
+        'El índice de conocimiento no llegó al prompt: el modelo no sabe que puede cargarlo');
+      check(!/Redcompra|3 cuotas sin interés/i.test(ctx.systemPrompt),
+        'El corpus viaja dentro del prompt de sistema: se paga en tokens en cada turno');
     },
   },
 

@@ -47,5 +47,18 @@
     "prefijo": "ejemplo"
   },
 
-  "metricas": { "activas": true }
+  "conocimiento": {
+    "_nota": "Lo que el negocio SABE vive en la carpeta conocimiento/, no en el prompt: el agente recibe solo el índice y carga el tema que necesita. Editar un archivo de esa carpeta cambia lo que el bot responde sin tocar código.",
+    "activo": true,
+    "carpeta": "conocimiento",
+    "tope_palabras": 800
+  },
+
+  "metricas": {
+    "_nota": "Los hitos son hechos del NEGOCIO que el panel reporta por conversación. Los marca una tool con metricas.marcarHito(canalId, '<hito>'). Precios en 0 = el panel muestra tokens y no inventa un costo en dólares.",
+    "activas": true,
+    "hitos": ["consulta_resuelta", "sin_dato"],
+    "precio_usd_millon_entrada": 0,
+    "precio_usd_millon_salida": 0
+  }
 }

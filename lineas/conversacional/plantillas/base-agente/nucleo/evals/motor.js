@@ -48,6 +48,7 @@ const { MENSAJE_DERIVACION } = require('../agent/handoff');
 const buffer = require('../agent/buffer');
 const { TOOL_DEFINITIONS } = require('../agent/tools');
 const { buildSystemPrompt } = require('../agent/prompts');
+const conocimiento = require('../agent/conocimiento');
 const { db, resetDemo } = require('../database/supabase');
 const { cargarCatalogo, derivar } = require('./perfiles');
 const { construirReglas, OMITIDA } = require('./reglas');
@@ -295,6 +296,11 @@ function crearMotor(cfg = {}) {
       todas: [],
       db,
       get toolLog() { return mock.estado.toolLog; },
+      // El prompt tal como le llegó al modelo. Se expone para que un escenario
+      // pueda comprobar lo que NO tiene que estar ahí: el caso concreto es el
+      // corpus de conocimiento, que si viaja en el prompt hace inútil la
+      // herramienta que lo carga y se paga en cada turno.
+      get systemPrompt() { return mock.estado.systemPrompt || ''; },
       lastResult: (n) => mock.ctxGuion().lastResult(n),
     };
 
@@ -357,7 +363,11 @@ function crearMotor(cfg = {}) {
           llamadasModelo: mock.estado.llamadas,
           toolLog: mock.estado.toolLog.slice(antesTools),
           toolLogAcumulado: mock.estado.toolLog,
-          toolNames: TOOL_DEFINITIONS.map((t) => t.name),
+          // Las del cliente MÁS las que inyecta el núcleo: si no, el invariante
+          // de fuga no cubriría `cargar_conocimiento`, que es una tool que el
+          // cliente nunca declaró y que el modelo igual puede nombrar.
+          toolNames: [...TOOL_DEFINITIONS, ...conocimiento.definiciones(TOOL_DEFINITIONS)]
+            .map((t) => t.name),
           systemPrompt: mock.estado.systemPrompt || safeSystemPrompt(),
           perfil,
         };

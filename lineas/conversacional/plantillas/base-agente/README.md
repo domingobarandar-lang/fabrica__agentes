@@ -26,10 +26,11 @@ base-agente/
 | `agent/memory.js` | Historial por canal con ventana deslizante |
 | `agent/handoff.js` | Derivación a humano. **Definitiva por defecto** — ver advertencias |
 | `agent/buffer.js` | Agrupa mensajes seguidos (6 s). Con lista de excepciones que **no** esperan |
-| `agent/metricas.js` | Una fila por turno. Nunca puede romper una respuesta |
+| `agent/metricas.js` | Una fila por turno + hitos de negocio. Nunca puede romper una respuesta |
+| `agent/conocimiento.js` | Lo que el negocio sabe, en archivos: **el índice va al prompt, el corpus no**. Inyecta y resuelve `cargar_conocimiento` |
 | `lib/texto.js` | `dividirMensaje` compartido por todos los canales de envío |
 | `evals/motor.js` | Arnés de pruebas: mock del LLM, runner y reporte. **Bloquea los efectos externos antes de cargar nada** |
-| `evals/reglas.js` | Los 6 invariantes que se verifican solos en cada turno |
+| `evals/reglas.js` | Los 7 invariantes que se verifican solos en cada turno |
 | `evals/perfiles.js` | Transformadores que derivan 8 conversaciones de una sola escrita a mano |
 | `evals/perfiles/_base.json` | El catálogo de los 8 perfiles, como datos |
 | `whatsapp/webhook.js` | Webhook de Meta con validación de firma HMAC-SHA256, fail-closed en producción |
@@ -39,6 +40,7 @@ base-agente/
 | `scripts/generar-railway.js` | `npm run railway`: escribe `railway.toml` según los canales activos |
 | `scripts/schema-nucleo.js` | `npm run schema`: el DDL con el prefijo del cliente ya sustituido |
 | `scripts/chat-local.js` | `npm run chat`: canal terminal. **MOCK por defecto**; gastar tokens exige `--real` |
+| `scripts/panel-metricas.js` | `npm run metricas`: lee la tabla y contesta *¿esto está funcionando?* |
 | `nixpacks.toml` | Build de Railway |
 | `.gitignore` | Mantiene `.env` fuera del repo del cliente |
 | `.env.example` | **Solo secretos y conexiones.** El comportamiento vive en `agente.config.json` |
@@ -50,7 +52,7 @@ base-agente/
 
 ### Qué hay en `ejemplo/`
 
-`agente.config.json`, `agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (el dominio del vertical), `index.js`, `telegram/bot.js` y `evals/` (`escenarios.js` + `correr.js`). Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
+`agente.config.json`, `agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (el dominio del vertical), `index.js`, `telegram/bot.js`, `evals/` (`escenarios.js` + `correr.js`) y `conocimiento/` (índice + dos temas de ejemplo). Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
 
 Existe por una razón concreta: los archivos del núcleo **no se pueden correr solos**. `agent/core.js` pide `./prompts` y `./tools`; `agent/memory.js` pide `../database/supabase`. Sin la semilla, "el núcleo funciona" sería una afirmación sin forma de comprobarla.
 
@@ -62,7 +64,7 @@ npm install
 npm run humo
 ```
 
-Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **92 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
+Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **125 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
 
 Qué cubre, por escenario:
 
@@ -78,6 +80,8 @@ Qué cubre, por escenario:
 | 7 | Métricas por turno, distinguiendo derivación de silencio posterior |
 | 8 | El arnés de evals: los 8 perfiles, los 6 invariantes uno por uno (que atrapen su fallo **y** dejen pasar lo sano) y la suite completa corriendo como la corre un cliente |
 | 9 | La config: precedencia en sus tres capas, typos que son error, archivo corrupto y archivo ausente, el **fallo cerrado** del prefijo de tablas, que `.env.example` no tape la config, la identidad llegando al prompt, el `startCommand` según canales, el validador aprobando **y** rechazando, y el chat local de punta a punta |
+| 10 | Conocimiento: el índice viaja en el prompt y **el corpus no**, la tool se inyecta y se ejecuta de verdad, una intención inventada devuelve la lista real, un archivo fuera de la carpeta se rechaza, el tope de palabras recorta y avisa, y con el índice roto el agente **sigue atendiendo** |
+| 11 | El panel: agrupa por conversación (una derivación con dos silencios es **una**), los hitos del negocio, la aritmética del costo con números elegidos, el estado vacío explicando por qué, y que cada campo de métricas **tenga su columna** en el DDL |
 
 Como usa el mismo mecanismo de armado que el script de sincronización, valida el manifiesto **antes** de que se use contra un proyecto real.
 
@@ -96,7 +100,9 @@ Un agente **no se configura tocando código**. Todo lo que decide cómo se compo
                  "intentos_modelo": 3, "buffer_ms": 6000, "buffer_max_partes": 10,
                  "buffer_excepciones": ["handoff", "cancelacion", "adjunto"] },
   "datos":     { "prefijo": "petshop_lira" },
-  "metricas":  { "activas": true }
+  "conocimiento": { "activo": true, "carpeta": "conocimiento", "tope_palabras": 800 },
+  "metricas":  { "activas": true, "hitos": ["agendo", "sin_dato"],
+                 "precio_usd_millon_entrada": 0, "precio_usd_millon_salida": 0 }
 }
 ```
 
@@ -121,6 +127,7 @@ npm run validar   # esquema, .env que tapa, tokens, tools, railway al día
 npm run railway   # regenera railway.toml desde canales.*.activo
 npm run schema    # DDL de las tablas del núcleo con el prefijo ya puesto
 npm run chat      # canal terminal, en MOCK. `npm run chat -- --real` gasta tokens
+npm run metricas  # panel: volumen, derivaciones, velocidad, hitos y costo
 ```
 
 Desde la fábrica, para todos los clientes de una vez:
@@ -128,6 +135,56 @@ Desde la fábrica, para todos los clientes de una vez:
 ```powershell
 .\scripts\validar-config.ps1 -Todos -RaizClientes C:\clientes
 ```
+
+## Lo que el negocio sabe: la carpeta `conocimiento/`
+
+Todo lo que un negocio "sabe" —formas de pago, cómo llegar, política de cambios, qué incluye cada plan— termina, si nadie lo impide, pegado dentro del prompt de sistema. Eso se paga **en cada turno aunque nadie pregunte**, empuja las reglas duras hacia el fondo del prompt hasta que el modelo deja de respetarlas, y obliga a editar código cada vez que cambia un dato.
+
+Acá vive en archivos de texto, y el agente recibe **solo el índice**:
+
+```
+conocimiento/
+  _indice.json          intención → archivo + descripción + keywords
+  formas-de-pago.md
+  como-llegar.md
+```
+
+```json
+{ "temas": [
+  { "intencion": "formas_de_pago", "archivo": "formas-de-pago.md",
+    "descripcion": "medios de pago aceptados, cuotas, boleta y factura",
+    "keywords": ["pago", "tarjeta", "transferencia", "cuotas"] }
+]}
+```
+
+El núcleo agrega al prompt una línea por tema e **inyecta la herramienta `cargar_conocimiento`** — no hay que declararla en `agent/tools.js`, y la resuelve `agent/core.js`. El contenido llega solo cuando el modelo la llama.
+
+- **Tope duro: 800 palabras por archivo.** Es un tope de *calidad*, no de espacio: un tema más largo se lleva el turno entero y devuelve una respuesta peor. Cuando no cabe, se parte en dos intenciones. En ejecución el texto se **recorta y lo anuncia**; `npm run validar` lo marca como **error** antes de que llegue a producción.
+- **La intención es una lista cerrada**, declarada como `enum` en el esquema de la tool y verificada al ejecutar. El modelo nunca elige un nombre de archivo: un índice que apunte fuera de la carpeta se rechaza al leerlo.
+- **Falla abierto**, al revés que `agente.config.json`. Un índice ilegible **no tumba al agente**: se grita en el log, la herramienta no se ofrece y el bot sigue atendiendo todo lo demás. Quedarse sin conocimiento es atender menos; caerse entero es no atender a nadie.
+- **La carpeta es producto del cliente** (está en `nunca_tocar` como `conocimiento/`, la carpeta completa): editar un archivo cambia lo que el bot sabe sin tocar una línea de código.
+- **Nunca copiar el corpus al prompt.** Hay un invariante del arnés (`conocimiento_fuera_del_prompt`) que pone la suite en rojo si alguien lo hace: es una regresión que no se ve en ninguna respuesta, solo en la factura.
+
+## Medir: `npm run metricas`
+
+El núcleo escribe una fila por turno desde la 1.1.0. El panel la lee y contesta *¿esto está funcionando?*: volumen, derivaciones **por conversación**, errores, velocidad (primer contacto, mediana, p95), herramientas más usadas, tokens y costo.
+
+**Los hitos son del negocio, no del núcleo.** El núcleo no puede saber qué es "calificar" en una dental o en una corredora, así que da un solo mecanismo: la tool que consigue el hecho lo marca, y el panel lo reporta.
+
+```js
+// dentro de agent/tools.js, cuando la acción se consigue de verdad
+metricas.marcarHito(canalId, 'agendo');
+```
+
+```json
+"metricas": { "hitos": ["agendo", "sin_dato"] }
+```
+
+Con eso salen tasa de conversión, turnos hasta el hito y tasa de "no sé" sin que el núcleo sepa de qué habla el negocio. **Un hito declarado que nunca ocurre igual se lista con 0%**: esa es la señal, y si no aparece no se ve. `npm run validar` avisa si un hito declarado no lo marca nadie.
+
+El costo en dólares solo aparece si se declara el precio del proveedor (`metricas.precio_usd_millon_*`): una tabla de precios escrita en el núcleo envejece sola y mentiría sobre plata. Sin precio, muestra tokens.
+
+**Sin Supabase el panel no ve nada**, y lo dice: las métricas viven en el proceso del bot y se pierden al reiniciar. Para medir de verdad: `SUPABASE_URL` + `npm run schema` + aplicar el DDL.
 
 ## Probar un agente: `npm test`
 
@@ -153,7 +210,7 @@ npm test -- --verboso             # imprime todas las conversaciones
 | `fuera_de_tema` | mete una pregunta que no es del rubro | que no invente ni pierda el hilo |
 | `cambia_opinion` | se arrepiente antes de confirmar | que no queden registros fantasma |
 
-**Los 6 invariantes** corren solos en **cada turno de cada escenario**, sin que el cliente escriba nada: no re-preguntar un dato ya capturado · no afirmar datos que ninguna herramienta devolvió · respetar el tope de resultados · responder en ≤600 caracteres · derivar cuando piden una persona · no filtrar el prompt de sistema ni el nombre de una tool. Todos deterministas. Un invariante que no se puede evaluar con la config que dio el cliente se marca **OMITIDA**, nunca aprobada: un check que no corrió no cuenta como verde.
+**Los 7 invariantes** corren solos en **cada turno de cada escenario**, sin que el cliente escriba nada: no re-preguntar un dato ya capturado · no afirmar datos que ninguna herramienta devolvió · respetar el tope de resultados · responder en ≤600 caracteres · derivar cuando piden una persona · no filtrar el prompt de sistema ni el nombre de una tool · no llevar el corpus de conocimiento dentro del prompt. Todos deterministas. Un invariante que no se puede evaluar con la config que dio el cliente se marca **OMITIDA**, nunca aprobada: un check que no corrió no cuenta como verde.
 
 **Sin juez LLM, a propósito.** Un evaluador con modelo real gastaría tokens en QA, que es regla dura de la fábrica y roza la causa 🔴 nº1 del semáforo. Si algún día entra, va detrás de un proveedor gratuito declarado y de una puerta explícita.
 
@@ -204,6 +261,8 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
    - `database/schema.sql` + el bloque de dominio de `database/supabase.js` — las tablas del rubro. Las tres del núcleo (`sesiones`, `estado_canal`, `metricas`) ya vienen: `npm run schema`.
    - `evals/escenarios.js` — los escenarios. CU-* del SPEC y ADV-* adversariales. Solo el camino feliz de cada uno: los ocho perfiles los deriva el motor.
    - `evals/correr.js` — qué significa "inventar un dato" y "lista demasiado larga" en este rubro.
+   - `conocimiento/` — lo que el negocio sabe y no es una acción: pagos, ubicación, políticas. Un archivo por tema, ≤800 palabras, declarado en `_indice.json`. **Nada de esto va al prompt.**
+   - `metricas.hitos` + `marcarHito` — qué cuenta como negocio conseguido en este rubro. Sin eso, el panel mide turnos y no resultados.
 4. **Verificar en mock** — `npm test`. **Siempre 0 tokens, sin excepción.** Ya no hay que confiar en que cada proyecto lo respete: `evals/motor.js` borra las credenciales del entorno antes de cargar nada, así que no existe la variable capaz de encender el modo real. Ese bug existió (`MOCK === 'true' || !ANTHROPIC_API_KEY`: bastaba una key en el `.env` para que `npm test` saliera a la API) y por eso el bloqueo está en el núcleo.
 5. **Deploy** (solo con aprobación de José): Railway, servicio propio, root directory = la carpeta del agente.
 
@@ -223,6 +282,9 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
 - **Para verificar que un buffer agrupa, cuenta TURNOS, no llamadas al modelo.** Un turno que usa una herramienta llama al modelo dos veces por diseño (pedirla y responder con su resultado). Contar llamadas da rojo en cualquier escenario con tools — o sea, en los que importan.
 - **Un invariante que no se puede evaluar se marca OMITIDA, no verde.** Si el cliente no declaró `patronId`, la regla del tope de resultados no corrió: contarla como aprobada es inflar la cobertura con checks que nunca se ejecutaron.
 - **Toda tabla nueva va prefijada por agente.** El proyecto Supabase se comparte entre agentes: una tabla sin prefijo cruza datos entre negocios distintos.
+- **Una métrica nueva sin su columna se pierde en silencio.** El `INSERT` se hace con la fila tal cual: una clave que no es columna hace fallar el insert entero, y como los errores de métricas se tragan a propósito (nunca romper una respuesta), la fila desaparece sin rastro hasta que alguien mira una tabla vacía. Por eso la fila se filtra contra `CAMPOS` de `agent/metricas.js` y el humo compara esa lista con `database/schema-nucleo.sql`. Si agregas un campo, tócalos **los dos**.
+- **El corpus de conocimiento nunca se pega en el prompt**, ni siquiera "un ratito para que no falle". No se nota en ninguna respuesta: se nota en la factura, en cada turno, aunque nadie pregunte por el tema. Hay un invariante que lo atrapa.
+- **Los archivos de conocimiento no son un almacén**, son fichas: 800 palabras es el tope y partir un tema en dos es la respuesta correcta, no subir el tope.
 - **La lógica transversal va en `processMessage` de `core.js`, no en un canal.** Todos los canales convergen ahí. Anclarla en el webhook de WhatsApp cuando el agente despliega Telegram significa que no se ejecuta nunca.
 - Dos bots de Telegram no pueden compartir token (conflicto 409): un bot de @BotFather por agente.
 - Supabase: usar la key `service_role`; la `anon` da *permission denied* con RLS.

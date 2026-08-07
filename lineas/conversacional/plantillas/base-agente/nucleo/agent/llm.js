@@ -75,10 +75,22 @@ function aRespuestaAnthropic(data) {
     try { input = JSON.parse(tc.function?.arguments || '{}'); } catch { /* args ilegibles -> {} */ }
     content.push({ type: 'tool_use', id: tc.id, name: tc.function?.name, input });
   }
+  // El uso se NORMALIZA al vocabulario de Anthropic (input_tokens /
+  // output_tokens), que es el que lee agent/core.js para las métricas. Sin esto
+  // el panel de costos quedaba en blanco para todos los proveedores
+  // OpenAI-compatibles — o sea, para los que efectivamente se usan.
+  const uso = data.usage
+    ? {
+        ...data.usage,
+        input_tokens:  data.usage.input_tokens  ?? data.usage.prompt_tokens,
+        output_tokens: data.usage.output_tokens ?? data.usage.completion_tokens,
+      }
+    : undefined;
+
   return {
     stop_reason: msg.tool_calls?.length ? 'tool_use' : 'end_turn',
     content,
-    usage: data.usage,
+    usage: uso,
   };
 }
 

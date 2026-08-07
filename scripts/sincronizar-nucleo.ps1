@@ -86,7 +86,21 @@ $version = (Get-Content -LiteralPath $ArchivoVersion -Raw -Encoding UTF8).Trim()
 # del cliente, escrita a mano— está en la lista: si alguien la moviera al núcleo
 # "para compartirla", un -Aplicar borraría las pruebas de todos los clientes sin
 # avisar. Se verifica antes de tocar nada, en cada corrida.
-$colision = @($man.nucleo | Where-Object { $man.nunca_tocar -contains $_.destino })
+#
+# Una entrada terminada en '/' protege la CARPETA completa. Hace falta desde que
+# existe 'conocimiento/': sus archivos los nombra el cliente (formas-de-pago.md,
+# planes.md, lo que sea), así que la fábrica no puede listarlos de antemano y una
+# lista de nombres exactos no protegería nada.
+function Test-Protegido {
+    param([string]$Destino)
+    foreach ($patron in $man.nunca_tocar) {
+        if ($patron -eq $Destino) { return $true }
+        if ($patron.EndsWith('/') -and $Destino.StartsWith($patron, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    return $false
+}
+
+$colision = @($man.nucleo | Where-Object { Test-Protegido -Destino $_.destino })
 if ($colision.Count -gt 0) {
     Write-Host "ERROR en MANIFIESTO.json: hay archivos del núcleo que pisarían producto del cliente." -ForegroundColor Red
     foreach ($c in $colision) {

@@ -471,8 +471,8 @@ async function main() {
   const resumenEvals = salidaEvals.match(/RESUMEN: (\d+)\/(\d+) corridas OK/);
   check(evals.status === 0,
     `la suite de evals del ejemplo pasa entera (salida ${evals.status})${evals.status === 0 ? '' : `\n${salidaEvals.slice(-1500)}`}`);
-  check(!!resumenEvals && resumenEvals[1] === resumenEvals[2] && Number(resumenEvals[2]) >= 32,
-    `corrió 4 escenarios × 8 perfiles y pasaron todos (${resumenEvals ? `${resumenEvals[1]}/${resumenEvals[2]}` : 'sin resumen'})`);
+  check(!!resumenEvals && resumenEvals[1] === resumenEvals[2] && Number(resumenEvals[2]) >= 40,
+    `corrió 5 escenarios × 8 perfiles y pasaron todos (${resumenEvals ? `${resumenEvals[1]}/${resumenEvals[2]}` : 'sin resumen'})`);
   const invariantes = salidaEvals.match(/·\s+(\d+) verificaciones automáticas/);
   check(!!invariantes && Number(invariantes[1]) > 0,
     `los invariantes del núcleo corrieron solos en cada turno (${invariantes ? invariantes[1] : 0} veces)`);
@@ -629,6 +629,201 @@ async function main() {
   check(validadorRojo.status === 1, 'y RECHAZA una config rota con código 1 (config inválida = no compila)');
   fs.writeFileSync(rutaConfigPrueba, configBuena, 'utf8');
   configMod._recargar();
+
+  // ── 10. Conocimiento del negocio ────────────────────────────────────────────
+  // La propiedad que hay que preservar: el ÍNDICE viaja en el prompt y el
+  // CORPUS no. Si alguien pega el corpus en prompts.js el agente sigue
+  // respondiendo bien, así que ningún test funcional lo detectaría: se ve solo
+  // en la factura del proveedor. Por eso se verifica acá y como invariante.
+  console.log('\n10. Conocimiento: el índice en el prompt, el corpus en archivos');
+
+  const conocimientoMod = cargar('agent', 'conocimiento.js');
+  const dirConocimiento = path.join(DIR_PRUEBA, 'conocimiento');
+  conocimientoMod._recargar();
+
+  const temas = conocimientoMod.temas();
+  check(temas.length === 2 && temas.some((t) => t.intencion === 'formas_de_pago'),
+    `la semilla trae ${temas.length} tema(s) de conocimiento, leídos del índice`);
+
+  const bloque = conocimientoMod.bloqueIndice();
+  check(/formas_de_pago/.test(bloque) && /medios de pago/.test(bloque),
+    'el bloque del prompt lleva la intención y su descripción (es lo único que el modelo usa para elegir)');
+  check(!/Redcompra/.test(bloque),
+    'y NO lleva el contenido del archivo: eso es exactamente lo que este mecanismo evita pagar en cada turno');
+
+  const defsConocimiento = conocimientoMod.definiciones([]);
+  check(defsConocimiento.length === 1 && defsConocimiento[0].name === 'cargar_conocimiento',
+    'el núcleo inyecta la herramienta: el cliente no tiene que declararla en agent/tools.js');
+  check(
+    JSON.stringify(defsConocimiento[0].input_schema.properties.intencion.enum) ===
+      JSON.stringify(['formas_de_pago', 'como_llegar']),
+    'la intención es una lista cerrada en el esquema: el modelo no puede pedir un archivo cualquiera'
+  );
+  check(conocimientoMod.definiciones([{ name: 'cargar_conocimiento' }]).length === 0,
+    'si el cliente ya definió una tool con ese nombre, el núcleo NO inyecta la suya (dos tools iguales = 400 del proveedor)');
+
+  // El camino completo: el modelo la pide, el núcleo la ejecuta, el dato llega.
+  let promptVisto = null;
+  let resultadoConocimiento = null;
+  const cliente10 = crearClienteFalso([
+    (params) => {
+      promptVisto = params.system;
+      return usaTool('cargar_conocimiento', { intencion: 'formas_de_pago' });
+    },
+    (params) => {
+      const ultimo = params.messages[params.messages.length - 1];
+      const b = Array.isArray(ultimo.content) ? ultimo.content.find((x) => x.type === 'tool_result') : null;
+      if (b) resultadoConocimiento = JSON.parse(b.content);
+      return texto('Sí, aceptamos débito, crédito y transferencia 😊');
+    },
+  ]);
+  _setClienteParaTests(cliente10);
+
+  const r10 = await processMessage('humo-conocimiento', '¿puedo pagar con tarjeta?');
+  check(cliente10.llamadas[0].tools.some((t) => t.name === 'cargar_conocimiento'),
+    'la herramienta llegó al modelo junto con las del cliente');
+  check(/formas_de_pago/.test(promptVisto || ''),
+    'el índice llegó al prompt de sistema aunque prompts.js no lo mencione (lo agrega el núcleo)');
+  check(!/Redcompra/.test(promptVisto || ''),
+    'EL CORPUS NO VIAJA EN EL PROMPT: se paga solo cuando alguien pregunta');
+  check(/Redcompra/.test(resultadoConocimiento?.contenido || ''),
+    'y sí llega completo como resultado de la herramienta');
+  check(/transferencia/i.test(r10), 'el dato del archivo terminó en la respuesta al cliente');
+
+  // La semilla trae la dirección y las formas de pago de un negocio inventado.
+  // Un proyecto nuevo las hereda y el bot las afirmaría con total seguridad, así
+  // que el validador reclama hasta que alguien las reemplace.
+  check(conocimientoMod.revisar().avisos.some((a) => /SEMILLA/.test(a)),
+    'el conocimiento de la semilla se denuncia como tal: un bot que da una dirección falsa es peor que uno que no sabe');
+
+  const inventada = conocimientoMod.ejecutar({ intencion: 'devoluciones' });
+  check(!!inventada.error && Array.isArray(inventada.temas_disponibles) && inventada.temas_disponibles.length === 2,
+    'una intención que el modelo se inventó devuelve error CON la lista real, para que se corrija en la ronda siguiente');
+
+  // Entrada no confiable: la intención la elige el modelo. Un índice que apunte
+  // fuera de la carpeta se rechaza al leerlo, no al abrirlo.
+  const indiceBueno = fs.readFileSync(path.join(dirConocimiento, '_indice.json'), 'utf8');
+  fs.writeFileSync(path.join(dirConocimiento, '_indice.json'), JSON.stringify({
+    temas: [{ intencion: 'fuga', archivo: '../.env', descripcion: 'intento de salir de la carpeta' }],
+  }), 'utf8');
+  conocimientoMod._recargar();
+  const revisionFuga = conocimientoMod.revisar();
+  check(revisionFuga.errores.some((e) => /fuera de/i.test(e)) && revisionFuga.temas === 0,
+    'un archivo que apunta fuera de conocimiento/ se rechaza: el índice no es una ruta que el modelo pueda elegir');
+
+  // Tope duro: en ejecución se RECORTA (nunca romper una respuesta) y el
+  // validador lo marca como error antes de que llegue a un cliente.
+  fs.writeFileSync(path.join(dirConocimiento, 'largo.md'),
+    'Tema deliberadamente largo para probar el tope duro de palabras del núcleo. ' +
+    'relleno '.repeat(900), 'utf8');
+  fs.writeFileSync(path.join(dirConocimiento, '_indice.json'), JSON.stringify({
+    temas: [{ intencion: 'largo', archivo: 'largo.md', descripcion: 'un tema que se pasa del tope' }],
+  }), 'utf8');
+  conocimientoMod._recargar();
+  const recortado = conocimientoMod.ejecutar({ intencion: 'largo' });
+  check(recortado.truncado === true && recortado.palabras === 800,
+    `un tema que se pasa del tope se entrega recortado a 800 palabras (llegaron ${recortado.palabras})`);
+  check(/texto recortado/.test(recortado.contenido),
+    'y el recorte se ANUNCIA en el propio texto: un corte silencioso se lee como negocio que no lo ofrece');
+  check(conocimientoMod.revisar().errores.some((e) => /tope/i.test(e)),
+    'el validador lo marca como error: 800 palabras es un tope de calidad, y partir el tema es la respuesta correcta');
+
+  // Un índice ilegible NO tumba al agente. Es la asimetría deliberada con
+  // agente.config.json, que sí es fatal: quedarse sin conocimiento es atender
+  // menos; caerse entero es no atender a nadie, ni a los que preguntan otra cosa.
+  fs.writeFileSync(path.join(dirConocimiento, '_indice.json'), '{ esto no es json', 'utf8');
+  conocimientoMod._recargar();
+  check(conocimientoMod.definiciones([]).length === 0 && conocimientoMod.anexarIndice('P') === 'P',
+    'con el índice roto no se ofrece la herramienta ni se anuncia nada que el agente no pueda cumplir');
+
+  const cliente10b = crearClienteFalso([texto('El viernes atendemos hasta las 17:00.')]);
+  _setClienteParaTests(cliente10b);
+  const rSinConocimiento = await processMessage('humo-sin-conocimiento', 'hola');
+  check(typeof rSinConocimiento === 'string' && rSinConocimiento.length > 0,
+    'FALLA ABIERTO: con el índice roto el agente sigue atendiendo por todo lo demás');
+
+  fs.writeFileSync(path.join(dirConocimiento, '_indice.json'), indiceBueno, 'utf8');
+  fs.rmSync(path.join(dirConocimiento, 'largo.md'), { force: true });
+  conocimientoMod._recargar();
+
+  // El invariante del arnés, que es lo que impide que esto se rompa dentro de
+  // seis meses cuando alguien "arregle" un dato pegándolo en el prompt.
+  const reglaCorpus = reglasMod.construirReglas({}).find((r) => r.id === 'conocimiento_fuera_del_prompt');
+  const muestra = conocimientoMod.muestrasDelCorpus()[0];
+  check(!!muestra && !!reglaCorpus.evaluar({ ...base, systemPrompt: `Eres un bot.\n${muestra.linea}` }),
+    'el invariante atrapa el corpus copiado dentro del prompt de sistema');
+  check(!reglaCorpus.evaluar({ ...base, systemPrompt: conocimientoMod.anexarIndice('Eres un bot.') }),
+    'y aprueba el prompt con solo el índice, que es la forma correcta');
+
+  // ── 11. El panel de métricas ────────────────────────────────────────────────
+  // La tabla se escribe desde la versión 1.1.0 y hasta acá no la leía nadie.
+  console.log('\n11. El panel de métricas responde "¿esto está funcionando?"');
+
+  const panel = cargar('scripts', 'panel-metricas.js');
+  const filasReales = await db.metricas.listar();
+  const ind = panel.calcular(filasReales, { hitosDeclarados: ['consulta_resuelta', 'sin_dato'] });
+
+  check(ind.turnos === filasReales.length && ind.conversaciones >= 5,
+    `el panel agrupa ${ind.turnos} turnos en ${ind.conversaciones} conversaciones (la unidad que le importa al dueño)`);
+  check(ind.derivacion.conversaciones >= 2 && ind.derivacion.conversaciones <= ind.conversaciones,
+    `contó ${ind.derivacion.conversaciones} conversaciones derivadas de ${ind.conversaciones}`);
+  // La propiedad, con números elegidos: una derivación seguida de dos silencios
+  // es UNA derivación. Contarla por turno inflaría la métrica que un dueño mira
+  // para decidir si el bot le sirve.
+  const unaSola = panel.calcular([
+    { ts: '2026-08-06T10:00:00Z', canal_id: 'c1', resultado: 'derivado' },
+    { ts: '2026-08-06T10:01:00Z', canal_id: 'c1', resultado: 'silencio_handoff' },
+    { ts: '2026-08-06T10:02:00Z', canal_id: 'c1', resultado: 'silencio_handoff' },
+  ]);
+  check(unaSola.turnos === 3 && unaSola.derivacion.conversaciones === 1 && unaSola.derivacion.tasa === 1,
+    'tres turnos de un mismo canal son UNA derivación, no tres (se cuenta por conversación)');
+  check(ind.errores.turnos >= 1 && ind.velocidad.mediana_ms !== null,
+    'reporta errores y velocidad con los datos que el núcleo ya venía escribiendo');
+
+  const hitoResuelto = ind.hitos.find((h) => h.hito === 'consulta_resuelta');
+  check(hitoResuelto?.conversaciones >= 1 && hitoResuelto.turnos_hasta >= 1,
+    'los hitos del NEGOCIO llegan desde la tool del cliente (ver_horario marcó "consulta_resuelta")');
+  const hitoNunca = ind.hitos.find((h) => h.hito === 'sin_dato');
+  check(!!hitoNunca && hitoNunca.conversaciones === 0 && hitoNunca.declarado,
+    'un hito declarado que NUNCA ocurrió igual se lista: 0% es la señal, y si no aparece no se ve');
+
+  check(ind.tokens.turnos_con_dato === 0 && ind.tokens.costo_usd === null,
+    'sin uso informado por el proveedor no inventa tokens ni costo (el mock no gasta nada)');
+
+  // La aritmética del costo, con números elegidos a mano: es plata y no puede
+  // "parecer" bien.
+  const conCosto = panel.calcular(
+    [{ ts: '2026-08-06T10:00:00Z', canal_id: 'c1', resultado: 'ok', duracion_ms: 100,
+       tokens_entrada: 1000000, tokens_salida: 500000 }],
+    { precioEntrada: 3, precioSalida: 15 }
+  );
+  check(Math.abs(conCosto.tokens.costo_usd - 10.5) < 1e-9,
+    `1M de entrada a US$3 + 0,5M de salida a US$15 = US$10,50 (dio ${conCosto.tokens.costo_usd})`);
+
+  const texto11 = panel.render(ind, { nombre: 'Negocio de ejemplo', modo: 'memoria' });
+  check(/CÓMO LE FUE AL CLIENTE/.test(texto11) && /HITOS DEL NEGOCIO/.test(texto11),
+    'el panel se imprime completo, en el idioma del dueño y sin jerga');
+  check(/NO PUEDE DECIR/.test(texto11),
+    'y declara lo que NO mide: cero errores también describe a un agente que contesta cualquier cosa');
+  const vacio = panel.render(panel.calcular([]), { modo: 'memoria' });
+  check(/pierden al reiniciarlo/.test(vacio),
+    'con la tabla vacía explica POR QUÉ está vacía en vez de mostrar ceros que parecen datos');
+
+  // Las columnas y los campos, comparados de verdad: un INSERT con una columna
+  // que no existe falla entero, y como los errores de métricas se tragan a
+  // propósito, la fila se perdería en silencio en producción.
+  const sqlNucleo = fs.readFileSync(path.join(DIR_PRUEBA, 'database', 'schema-nucleo.sql'), 'utf8');
+  const bloqueTabla = (sqlNucleo.match(/create table if not exists \{\{PREFIJO\}\}_metricas \(([\s\S]*?)\);/i) || [])[1] || '';
+  const columnas = bloqueTabla.split('\n').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+  const sinColumna = metricas.CAMPOS.filter((c) => !columnas.includes(c));
+  check(sinColumna.length === 0,
+    `cada campo de métricas tiene su columna en el DDL (sin columna: ${sinColumna.join(', ') || 'ninguno'})`);
+
+  const antesFilas = metricas.filas().length;
+  await metricas.registrar({ canal_id: 'humo-campos', resultado: 'ok', campo_inventado: 'x' });
+  const ultima = metricas.filas()[metricas.filas().length - 1];
+  check(metricas.filas().length === antesFilas + 1 && ultima.campo_inventado === undefined,
+    'un campo que no es columna se descarta antes del INSERT (y se avisa), en vez de perder la fila entera');
 
   // ── Resultado ───────────────────────────────────────────────────────────────
   resetDemo();

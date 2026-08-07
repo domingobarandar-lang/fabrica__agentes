@@ -1,5 +1,5 @@
 {
-  "version": "1.3.0",
+  "version": "1.4.0",
   "descripcion": "Mapa origen→destino del núcleo conversacional. Lo consumen sincronizar-nucleo.ps1 (para instalar en un proyecto) y nucleo/scripts/humo.js (para armar el overlay de prueba). Una sola fuente de verdad: si un archivo no está acá, no viaja.",
 
   "nucleo": [
@@ -11,7 +11,8 @@
     { "origen": "nucleo/agent/memory.js",      "destino": "agent/memory.js",      "nota": "historial por canal" },
     { "origen": "nucleo/agent/handoff.js",     "destino": "agent/handoff.js",     "nota": "derivación a humano; definitiva por defecto" },
     { "origen": "nucleo/agent/buffer.js",      "destino": "agent/buffer.js",      "nota": "agrupa mensajes seguidos; handoff se salta la ventana SIEMPRE" },
-    { "origen": "nucleo/agent/metricas.js",    "destino": "agent/metricas.js",    "nota": "métricas por turno; nunca rompe una respuesta" },
+    { "origen": "nucleo/agent/metricas.js",    "destino": "agent/metricas.js",    "nota": "métricas por turno + hitos de negocio; nunca rompe una respuesta" },
+    { "origen": "nucleo/agent/conocimiento.js", "destino": "agent/conocimiento.js", "nota": "índice al prompt, corpus en archivos; inyecta y resuelve la tool cargar_conocimiento" },
     { "origen": "nucleo/lib/texto.js",         "destino": "lib/texto.js",         "nota": "dividirMensaje compartido por todos los canales de envío" },
     { "origen": "nucleo/evals/motor.js",       "destino": "evals/motor.js",       "nota": "arnés de evaluación: mock del LLM, runner y reporte. Bloquea los efectos externos antes de cargar nada" },
     { "origen": "nucleo/evals/reglas.js",      "destino": "evals/reglas.js",      "nota": "invariantes deterministas que corren solos en cada turno" },
@@ -24,6 +25,7 @@
     { "origen": "nucleo/scripts/generar-railway.js",  "destino": "scripts/generar-railway.js",  "nota": "npm run railway: genera railway.toml desde canales.*.activo" },
     { "origen": "nucleo/scripts/schema-nucleo.js",    "destino": "scripts/schema-nucleo.js",    "nota": "npm run schema: DDL con el prefijo del cliente ya puesto" },
     { "origen": "nucleo/scripts/chat-local.js",       "destino": "scripts/chat-local.js",       "nota": "npm run chat: canal terminal. MOCK por defecto, --real para gastar tokens a propósito" },
+    { "origen": "nucleo/scripts/panel-metricas.js",   "destino": "scripts/panel-metricas.js",   "nota": "npm run metricas: lee la tabla de métricas y responde '¿esto está funcionando?'" },
     { "origen": "nucleo/nixpacks.toml",        "destino": "nixpacks.toml",        "nota": "build Railway" },
     { "origen": "nucleo/.gitignore",           "destino": ".gitignore",           "nota": "mantiene .env fuera del repo del cliente" },
     { "origen": "nucleo/.env.example",         "destino": ".env.example",         "nota": "SOLO secretos y conexiones; el comportamiento vive en agente.config.json" }
@@ -37,7 +39,10 @@
     { "origen": "ejemplo/index.js",             "destino": "index.js" },
     { "origen": "ejemplo/telegram/bot.js",      "destino": "telegram/bot.js" },
     { "origen": "ejemplo/evals/escenarios.js",  "destino": "evals/escenarios.js" },
-    { "origen": "ejemplo/evals/correr.js",      "destino": "evals/correr.js" }
+    { "origen": "ejemplo/evals/correr.js",      "destino": "evals/correr.js" },
+    { "origen": "ejemplo/conocimiento/_indice.json",      "destino": "conocimiento/_indice.json" },
+    { "origen": "ejemplo/conocimiento/formas-de-pago.md", "destino": "conocimiento/formas-de-pago.md" },
+    { "origen": "ejemplo/conocimiento/como-llegar.md",    "destino": "conocimiento/como-llegar.md" }
   ],
 
   "plantillas": [
@@ -53,7 +58,8 @@
     "agente.config.json",
     ".env",
     "BITACORA.md",
-    "railway.toml"
+    "railway.toml",
+    "conocimiento/"
   ],
 
   "notas": {
@@ -61,7 +67,8 @@
     "agente.config.json": "Viaja SOLO en la capa 'ejemplo' (semilla) y está en 'nunca_tocar': un proyecto lo recibe una vez al nacer y desde ahí es del cliente. Sincronizar el núcleo jamás lo pisa. El ESQUEMA que lo valida sí es del núcleo y vive en config.js.",
     "database": "nucleo-db.js y schema-nucleo.sql son del núcleo (conexión, memoria, sesiones/estado_canal/metricas). supabase.js y schema.sql son del cliente: ahí viven los repositorios del vertical. El punto de unión es `{ ...crearBaseNucleo(), ...dominio }`.",
     "ejemplo": "Cumple dos roles: overlay de prueba para nucleo/scripts/humo.js, y semilla que nuevo-proyecto.ps1 deposita para que un proyecto nuevo arranque y responda desde el minuto uno.",
-    "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como destino en 'nucleo'. Es una guarda contra pisar el producto del cliente. Implementada de verdad desde 2026-08-06: antes estaba solo escrita acá.",
+    "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como destino en 'nucleo'. Es una guarda contra pisar el producto del cliente. Implementada de verdad desde 2026-08-06: antes estaba solo escrita acá. Una entrada terminada en '/' protege la CARPETA entera: hace falta para conocimiento/, cuyos archivos los nombra el cliente y la fábrica no puede listar de antemano.",
+    "conocimiento": "conocimiento/ es producto del cliente: el índice y los archivos de cada tema. Viaja SOLO en la capa 'ejemplo' (semilla) y está protegido por 'nunca_tocar'. El núcleo aporta agent/conocimiento.js, que arma el índice para el prompt e inyecta y resuelve la tool cargar_conocimiento; el corpus nunca entra al prompt.",
     "evals": "El motor, los perfiles y los invariantes son NÚCLEO (iguales para todos). Los escenarios y la config del rubro son del CLIENTE y por eso están en 'ejemplo' y en 'nunca_tocar': se escriben una vez por proyecto y no se pisan nunca."
   }
 }

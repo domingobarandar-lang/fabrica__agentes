@@ -1,0 +1,19 @@
+{
+  "_semilla": true,
+  "_lee_esto_primero": "Índice del conocimiento del negocio. El agente recibe SOLO esto en su prompt (una línea por tema) y carga el contenido con la herramienta cargar_conocimiento cuando hace falta. Editar un archivo de esta carpeta cambia lo que el bot sabe SIN tocar código y sin volver a desplegar. Tope duro: 800 palabras por archivo — si un tema no cabe, se parte en dos intenciones; subir el tope empeora la respuesta. `npm run validar` revisa que cada archivo exista, no se repita ninguna intención y ninguno se pase del tope.",
+
+  "temas": [
+    {
+      "intencion": "formas_de_pago",
+      "archivo": "formas-de-pago.md",
+      "descripcion": "medios de pago aceptados, cuotas, boleta y factura",
+      "keywords": ["pago", "pagar", "tarjeta", "débito", "crédito", "transferencia", "cuotas", "boleta", "factura"]
+    },
+    {
+      "intencion": "como_llegar",
+      "archivo": "como-llegar.md",
+      "descripcion": "dirección del local, referencias, estacionamiento y transporte público",
+      "keywords": ["dirección", "dónde", "llegar", "ubicación", "estacionamiento", "metro", "micro"]
+    }
+  ]
+}

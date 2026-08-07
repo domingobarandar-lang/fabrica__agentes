@@ -12,7 +12,8 @@
     "test": "node evals/correr.js",
     "validar": "node scripts/validar-config.js",
     "railway": "node scripts/generar-railway.js",
-    "schema": "node scripts/schema-nucleo.js"
+    "schema": "node scripts/schema-nucleo.js",
+    "metricas": "node scripts/panel-metricas.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

@@ -60,6 +60,8 @@ async function main() {
   revisarEnv();
   revisarCanales();
   await revisarHerramientas();
+  revisarConocimiento();
+  revisarHitos();
   revisarRailway();
 
   informar();
@@ -156,7 +158,55 @@ async function revisarHerramientas() {
   }
 }
 
-// ─── 5. railway.toml al día con los canales ──────────────────────────────────
+// ─── 5. El conocimiento del negocio ──────────────────────────────────────────
+// Los tres modos de falla son de cliente, no de programador: el índice apunta a
+// un archivo que se renombró, se repite una intención, o un tema creció hasta
+// pasarse del tope. Los tres se ven igual en producción — "el bot dice que no
+// tiene el dato"— y ninguno tira un error. Acá son ERROR: es el único momento
+// en que alguien mira.
+
+let conocimientoRevisado = null;
+
+function revisarConocimiento() {
+  let mod;
+  try {
+    mod = require(path.join(RAIZ, 'agent', 'conocimiento'));
+  } catch (error) {
+    avisos.push(`no pude cargar agent/conocimiento.js: ${error.message}`);
+    return;
+  }
+  conocimientoRevisado = mod.revisar();
+  if (!conocimientoRevisado.carpeta) return;  // sin carpeta no hay nada que revisar
+
+  errores.push(...conocimientoRevisado.errores.map((e) => `conocimiento: ${e}`));
+  avisos.push(...conocimientoRevisado.avisos.map((a) => `conocimiento: ${a}`));
+}
+
+// ─── 6. Los hitos declarados los marca alguien ───────────────────────────────
+// Un hito declarado que ninguna tool marca produce un panel que informa 0%
+// eternamente, y 0% se lee como "el agente no convierte" cuando en realidad
+// nadie escribió la línea que lo registra. Es búsqueda de texto, así que va
+// como aviso: puede marcarse desde otro archivo.
+
+function revisarHitos() {
+  const hitos = resuelto['metricas.hitos'] || [];
+  if (!hitos.length) return;
+
+  const rutaTools = path.join(RAIZ, 'agent', 'tools.js');
+  if (!fs.existsSync(rutaTools)) return;
+  const fuente = fs.readFileSync(rutaTools, 'utf8');
+
+  const huerfanos = hitos.filter((h) => !fuente.includes(h));
+  if (huerfanos.length) {
+    avisos.push(
+      `estos hitos están declarados en metricas.hitos pero no aparecen en agent/tools.js: ` +
+      `${huerfanos.join(', ')}. Sin un metricas.marcarHito(canalId, "…") que los registre, ` +
+      'el panel los mostrará siempre en 0%.'
+    );
+  }
+}
+
+// ─── 7. railway.toml al día con los canales ──────────────────────────────────
 
 function revisarRailway() {
   const rutaRailway = path.join(RAIZ, 'railway.toml');
@@ -207,10 +257,17 @@ function informar() {
         ? 'activo, derivación DEFINITIVA'
         : `activo, el bot retoma a los ${resuelto['handoff.timeout_min']} min`;
 
+    const conocimiento = !conocimientoRevisado?.carpeta
+      ? 'sin carpeta conocimiento/ (el agente responde solo con sus tools)'
+      : `${conocimientoRevisado.temas} tema(s), tope ${resuelto['conocimiento.tope_palabras']} palabras` +
+        (resuelto['conocimiento.activo'] ? '' : ' — APAGADO por conocimiento.activo');
+
     console.log(`   Canales activos : ${canales}`);
     console.log(`   Tablas          : ${tablas}`);
     console.log(`   Handoff         : ${handoff}`);
-    console.log(`   Buffer          : ${resuelto['limites.buffer_ms']} ms\n`);
+    console.log(`   Buffer          : ${resuelto['limites.buffer_ms']} ms`);
+    console.log(`   Conocimiento    : ${conocimiento}`);
+    console.log(`   Hitos medidos   : ${(resuelto['metricas.hitos'] || []).join(', ') || 'ninguno declarado'}\n`);
   }
 }
 

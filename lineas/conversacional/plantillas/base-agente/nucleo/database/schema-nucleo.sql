@@ -40,7 +40,15 @@ create table if not exists {{PREFIJO}}_estado_canal (
 
 -- ─── Métricas por turno ──────────────────────────────────────────────────────
 -- Una fila por interacción. Registrar una métrica NUNCA puede romper una
--- respuesta al cliente: agent/metricas.js traga los errores a propósito.
+-- respuesta al cliente: agent/metricas.js traga los errores a propósito. Y
+-- justamente por eso las columnas de acá tienen que coincidir con la lista
+-- CAMPOS de agent/metricas.js: un INSERT con una columna que no existe falla
+-- entero, el error se traga, y la fila se pierde sin que nadie se entere hasta
+-- mirar una tabla vacía. La prueba de humo compara las dos listas.
+--
+-- hito: hecho del NEGOCIO ocurrido en ese turno (agendó, calificó, no supe).
+-- Lo marca una tool del cliente con metricas.marcarHito(canalId, 'agendo') y
+-- los que importan se declaran en `metricas.hitos` de agente.config.json.
 create table if not exists {{PREFIJO}}_metricas (
   id               bigserial primary key,
   ts               timestamptz not null default now(),
@@ -51,7 +59,18 @@ create table if not exists {{PREFIJO}}_metricas (
   rondas_tool      integer,
   tools            jsonb,
   partes_agrupadas integer,
-  reintentos       integer
+  reintentos       integer,
+  tokens_entrada   integer,
+  tokens_salida    integer,
+  hito             text
 );
 
 create index if not exists {{PREFIJO}}_metricas_ts_idx on {{PREFIJO}}_metricas (ts desc);
+create index if not exists {{PREFIJO}}_metricas_canal_idx on {{PREFIJO}}_metricas (canal_id, ts);
+
+-- ─── Si ya aplicaste una versión anterior de este archivo ────────────────────
+-- Estas columnas llegaron con el núcleo 1.4.0 (panel de métricas). `create
+-- table if not exists` NO las agrega a una tabla que ya existe: corre esto.
+alter table {{PREFIJO}}_metricas add column if not exists tokens_entrada integer;
+alter table {{PREFIJO}}_metricas add column if not exists tokens_salida  integer;
+alter table {{PREFIJO}}_metricas add column if not exists hito           text;

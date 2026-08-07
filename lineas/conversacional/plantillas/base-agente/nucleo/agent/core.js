@@ -13,10 +13,11 @@ const { crearClienteAnthropic } = require('./llm');
 const { buildSystemPrompt } = require('./prompts');
 const { TOOL_DEFINITIONS, ejecutarHerramienta } = require('./tools');
 const { cargarHistorial, persistirInteraccion } = require('./memory');
-const handoff  = require('./handoff');
-const buffer   = require('./buffer');
-const metricas = require('./metricas');
-const config   = require('../config');
+const handoff      = require('./handoff');
+const buffer       = require('./buffer');
+const metricas     = require('./metricas');
+const conocimiento = require('./conocimiento');
+const config       = require('../config');
 
 // Cliente perezoso: sin credenciales el constructor lanza error, y este módulo
 // también se carga desde los simuladores locales (chat / tests / telegram mock)
@@ -191,11 +192,16 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
   const historial = await cargarHistorial(canalId);
   const mensajes  = [...historial, { role: 'user', content: mensaje }];
 
+  // El conocimiento del negocio entra acá y no en prompts.js: el prompt lo
+  // reescribe cada cliente, y lo que se olvida de copiar deja al agente con el
+  // índice anunciado y sin forma de cargarlo. `anexarIndice` agrega SOLO el
+  // índice (una línea por tema); el corpus se trae con la herramienta.
+  const toolsConocimiento = conocimiento.definiciones(TOOL_DEFINITIONS);
   const paramsBase = {
     model: modelo(),
     max_tokens: maxTokens(),
-    system: buildSystemPrompt(),
-    tools: TOOL_DEFINITIONS,
+    system: conocimiento.anexarIndice(buildSystemPrompt()),
+    tools: [...TOOL_DEFINITIONS, ...toolsConocimiento],
   };
 
   let avisado = false;
@@ -212,8 +218,23 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
   const toolsUsadas = [];
   let rondas = 0;
 
+  // Tokens del turno, sumando todas las rondas. Arrancan en null y no en 0 a
+  // propósito: "el proveedor no informó uso" y "gastamos cero" son cosas
+  // distintas, y un panel que muestre 0 tokens cuando en realidad no sabe está
+  // mintiendo sobre plata.
+  let tokensEntrada = null;
+  let tokensSalida  = null;
+  const contarUso = (uso) => {
+    if (!uso) return;
+    const entrada = uso.input_tokens ?? uso.prompt_tokens;
+    const salida  = uso.output_tokens ?? uso.completion_tokens;
+    if (typeof entrada === 'number') tokensEntrada = (tokensEntrada ?? 0) + entrada;
+    if (typeof salida === 'number')  tokensSalida  = (tokensSalida  ?? 0) + salida;
+  };
+
   try {
     let respuesta = await crearMensajeClaude({ ...paramsBase, messages: mensajes }, opcionesLlamada);
+    contarUso(respuesta.usage);
 
     while (respuesta.stop_reason === 'tool_use' && rondas < MAX_RONDAS_TOOL) {
       // El contenido del assistant se pasa de vuelta TAL CUAL
@@ -225,7 +246,11 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
         toolsUsadas.push(bloque.name);
         let resultado;
         try {
-          resultado = await ejecutarHerramienta(bloque.name, bloque.input, canalId);
+          // `cargar_conocimiento` la resuelve el núcleo: la inyectó él y el
+          // ejecutarHerramienta del cliente no la conoce.
+          resultado = conocimiento.esTool(bloque.name)
+            ? conocimiento.ejecutar(bloque.input)
+            : await ejecutarHerramienta(bloque.name, bloque.input, canalId);
         } catch (error) {
           console.error(`[Tools] ${bloque.name} falló:`, error.message);
           resultado = { error: `La herramienta falló: ${error.message}` };
@@ -240,6 +265,7 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
       mensajes.push({ role: 'user', content: resultados });
 
       respuesta = await crearMensajeClaude({ ...paramsBase, messages: mensajes }, opcionesLlamada);
+      contarUso(respuesta.usage);
       rondas++;
     }
 
@@ -247,7 +273,8 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
     // leerlo directo rompería.
     if (respuesta.stop_reason === 'refusal') {
       await metricas.registrar({ canal_id: canalId, resultado: 'ok', motivo: 'refusal',
-        duracion_ms: Date.now() - arranque });
+        duracion_ms: Date.now() - arranque,
+        tokens_entrada: tokensEntrada, tokens_salida: tokensSalida });
       return 'Sobre eso no te puedo ayudar. Puedo mostrarte el catálogo o agendarte una hora. 😊';
     }
 
@@ -269,6 +296,8 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
       tools: toolsUsadas,
       partes_agrupadas: partes,
       reintentos,
+      tokens_entrada: tokensEntrada,
+      tokens_salida: tokensSalida,
     });
     return texto;
   } catch (error) {
@@ -281,6 +310,8 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
       motivo: error?.message?.slice(0, 200),
       duracion_ms: Date.now() - arranque,
       reintentos,
+      tokens_entrada: tokensEntrada,
+      tokens_salida: tokensSalida,
     });
     if (derivo) return handoff.MENSAJE_DERIVACION;
     throw error;

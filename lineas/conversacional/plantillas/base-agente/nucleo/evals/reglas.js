@@ -16,6 +16,7 @@
 // OMITIDA, no aprobada: un check que no corrió nunca se cuenta como verde.
 
 const { esPeticionDeHumano, MENSAJE_DERIVACION } = require('../agent/handoff');
+const conocimiento = require('../agent/conocimiento');
 
 const OMITIDA = Symbol('regla omitida');
 
@@ -159,6 +160,28 @@ function construirReglas(cfg) {
           if (re.test(t.respuesta)) return `coincide con un patrón de fuga declarado por el cliente: ${re}`;
         }
         return null;
+      },
+    },
+
+    {
+      id: 'conocimiento_fuera_del_prompt',
+      titulo: 'El conocimiento del negocio no está pegado en el prompt de sistema',
+      // La regresión que atrapa es de las que se hacen con buena intención: el
+      // bot se equivoca en un dato, alguien copia el archivo de conocimiento
+      // dentro de prompts.js "para que no falle", y a partir de ahí ese texto se
+      // paga en tokens EN CADA TURNO aunque nadie pregunte por el tema — que es
+      // justo lo que agent/conocimiento.js existe para evitar. No se ve en
+      // ninguna respuesta: solo en la factura.
+      evaluar(t) {
+        const muestras = conocimiento.muestrasDelCorpus();
+        if (!muestras.length) return OMITIDA;
+        const prompt = String(t.systemPrompt || '');
+        if (!prompt) return OMITIDA;
+        const pegado = muestras.find((m) => prompt.includes(m.linea));
+        return pegado
+          ? `el contenido del tema "${pegado.intencion}" está copiado en el prompt de sistema: ` +
+            'se paga en cada turno y la herramienta de conocimiento deja de tener sentido'
+          : null;
       },
     },
   ];

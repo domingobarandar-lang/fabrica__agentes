@@ -125,14 +125,40 @@ const ESQUEMA = {
   'datos.tabla_metricas':     { tipo: 'texto', env: 'TABLA_METRICAS',
                            def: (c) => `${c['datos.prefijo']}_metricas` },
 
+  // El conocimiento del negocio vive en archivos, no en el prompt. Ver
+  // agent/conocimiento.js: el agente recibe solo el índice y carga el tema que
+  // haga falta con una herramienta.
+  'conocimiento.activo':        { tipo: 'booleano', env: 'CONOCIMIENTO_ACTIVO', def: true,
+                           nota: 'false apaga la herramienta aunque exista la carpeta' },
+  'conocimiento.carpeta':       { tipo: 'texto', env: null, def: 'conocimiento',
+                           nota: 'carpeta con _indice.json y los archivos de cada tema' },
+  // 800 palabras es un TOPE DE CALIDAD, no de espacio: un tema más largo se come
+  // el turno y devuelve una respuesta peor. Cuando no cabe, se parte en dos
+  // intenciones. Subirlo es casi siempre la decisión equivocada.
+  'conocimiento.tope_palabras': { tipo: 'numero', env: null, def: 800 },
+
   'metricas.activas':    { tipo: 'booleano', env: 'METRICAS_ACTIVAS', def: true },
+  // Hitos del NEGOCIO que el panel reporta por conversación (agendó, calificó,
+  // no supe). El núcleo no puede saber qué es "calificar" en cada rubro: da el
+  // mecanismo (agent/metricas.js → marcarHito) y el cliente los nombra acá.
+  // Declararlos importa aunque nunca ocurran: un hito que marca 0% es una señal,
+  // y si el panel no lo lista, esa señal no se ve.
+  'metricas.hitos':      { tipo: 'lista', env: null, def: [] },
+  // Precio del proveedor de LLM, para que el panel exprese el gasto en dólares
+  // además de en tokens. En 0 (default) el panel muestra tokens y dice que no
+  // hay precio declarado: inventar una tabla de precios que envejece sola sería
+  // mentir sobre plata.
+  'metricas.precio_usd_millon_entrada': { tipo: 'numero', env: null, def: 0 },
+  'metricas.precio_usd_millon_salida':  { tipo: 'numero', env: null, def: 0 },
 };
 
 // Claves de primer nivel permitidas. Una clave desconocida es un ERROR y no un
 // aviso: si alguien escribe "limits" en vez de "limites", su configuración
 // entera no se aplica y todo sigue andando con los defaults. Ese es exactamente
 // el modo de falla silencioso que este archivo vino a matar.
-const RAICES = new Set(['cliente', 'identidad', 'canales', 'handoff', 'limites', 'datos', 'metricas']);
+const RAICES = new Set([
+  'cliente', 'identidad', 'canales', 'handoff', 'limites', 'datos', 'conocimiento', 'metricas',
+]);
 
 // Claves que se ignoran a propósito: espacio para notas dentro del JSON, que no
 // admite comentarios.
