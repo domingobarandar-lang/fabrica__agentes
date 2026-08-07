@@ -97,7 +97,7 @@ Este repo (`fabrica__agentes/`) guarda **solo la maquinaria**: pipeline, líneas
 Objetivo: que José sea **consciente** de las decisiones sin frenar tu autonomía. No es control previo, es conciencia posterior con un único freno duro para lo irreversible. El nivel de un cambio **no es criterio libre tuyo**: está definido por esta lista.
 
 - 🟢 **Verde — sigo y anoto una línea.** Cambios de rutina que no alteran el comportamiento observable del agente ni toman decisiones de negocio (refactor interno, textos de demo, formato, dependencias). Una línea en la bitácora. José no necesita leerlo.
-- 🟡 **Amarillo — sigo, pero queda PENDIENTE DE LECTURA.** Cambios que alteran el comportamiento del agente o toman una decisión de arquitectura/negocio no trivial (nuevo prompt, nueva tool, cambio de proveedor LLM, cambio de schema, elección de base a clonar, nueva ficha de catálogo). Entrada completa en la bitácora con encabezado `[🟡 PENDIENTE]`. Sigues; José lo lee cuando quiera y lo marca `[🟡 LEÍDO]`.
+- 🟡 **Amarillo — sigo, pero queda POR LEER.** Cambios que alteran el comportamiento del agente o toman una decisión de arquitectura/negocio no trivial (nuevo prompt, nueva tool, cambio de proveedor LLM, cambio de schema, elección de base a clonar, nueva ficha de catálogo). Entrada completa en la bitácora con encabezado `[🟡 POR LEER]`. Sigues; José lo lee cuando quiera y lo marca `[🟡 LEÍDO]`. **La marca es sobre la lectura, no sobre el trabajo**: `[🟡 POR LEER]` significa que el cambio está terminado y esperando que José se entere, nunca que quedó algo a medias.
 - 🔴 **Rojo — me detengo y pregunto.** Las 8 causas de "SOLO consultas a José" (arriba). Lista cerrada, no criterio tuyo.
 
 **Dónde se anota.**

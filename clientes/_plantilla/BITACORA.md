@@ -10,7 +10,7 @@ Schema de cada entrada:
 - Por qué: <la razón — esto es lo que git NO guarda>
 - Qué probé / resultado: <mock, tests, verificación>
 - Qué descarté y por qué: <alternativas rechazadas; omitir si ninguna>
-- Estado de lectura: <N/A verde · PENDIENTE|LEÍDO amarillo · RESPONDIDO rojo>
+- Estado de lectura: <N/A verde · POR LEER|LEÍDO amarillo · RESPONDIDO rojo>
 ```
 
 ---

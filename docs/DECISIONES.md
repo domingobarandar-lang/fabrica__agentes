@@ -158,7 +158,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 **Descartado**: (a) hook que **bloquea** el cierre — frustra sesiones de exploración; en v1 solo avisa fuerte, se sube a bloqueo si el aviso se ignora en la práctica; (b) trazabilidad automática completa (loguear cada cambio) — infraestructura para mantener en Windows antes del primer peso; el semáforo + bitácora entrega conciencia, que es lo que José pidió, no detección. Pendiente para v2: correr la suite MOCK en el hook para detección real de regresión (Open Question del diseño).
 
-## 2026-07-30 — Auditoría de la DIRECTIVA de arquitectura: diagnóstico y reordenamiento propuesto [🟡 PENDIENTE]
+## 2026-07-30 — Auditoría de la DIRECTIVA de arquitectura: diagnóstico y reordenamiento propuesto [🟡 POR LEER]
 
 **Estado**: **propuesta, NO aplicada. Cero cambios de código en esta sesión.** Sesión de `/gstack-office-hours` cortada antes de elegir alternativa de implementación; se retoma el 2026-07-31.
 
@@ -206,7 +206,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 **Descartado en esta sesión**: (a) aplicar A-01..A-14 en el orden de la directiva — pone el refactor multi-agente antes de la red de seguridad, con contrato en preparación; (b) segunda opinión de otro modelo (Codex no está instalado; el subagente de Claude lo canceló José); (c) búsqueda web de paisaje competitivo — la directiva **ya es** la investigación de paisaje, con fuentes en su apéndice, y buscar de nuevo mandaría términos del negocio afuera sin aportar nada.
 
-## 2026-07-31 — Núcleo compartido: enfoque elegido, canal de distribución y plantilla oficial [🟡 PENDIENTE]
+## 2026-07-31 — Núcleo compartido: enfoque elegido, canal de distribución y plantilla oficial [🟡 POR LEER]
 
 **Decisión (gate de premisas con José)**: se adopta el **enfoque A — "núcleo mínimo primero, sangre encima"**. Las 7 premisas del 2026-07-30 quedan confirmadas. Secuencia: paso 0 medir la red → 1a extraer el núcleo al repo (🟡) → 1b sincronizar sobre clientes (🔴) → 2 bugs de producción (handoff, buffer, timeout) → 3 reconciliar el arnés de evals → 4 `agente.config.json` + validador → 5 conocimiento por carpetas + métricas → 6 multi-agente por config. Documento de diseño completo en `~/.gstack/projects/domingobarandar-lang-fabrica__agentes/user-main-design-20260731-062404.md`.
 
@@ -276,7 +276,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 **Plan de ejecución vigente**, en `~/.gstack/projects/domingobarandar-lang-fabrica__agentes/user-main-design-20260731-062404.md` (v5): (1) construir el núcleo en `lineas/conversacional/plantillas/base-agente/` extrayendo desde `ade8903`, con ejemplo ejecutable, prueba de humo y script de sincronización; (2) escribir los bugs de producción **dentro** del núcleo — handoff con guarda en el envío, agrupación de mensajes, timeout, métricas; (3) generalizar el arnés de evals con los 8 perfiles base; (4) `agente.config.json` + validador; (5) conocimiento por carpetas; (6) multi-agente por config si las métricas lo justifican. El primer cliente real valida el molde entero.
 
-## 2026-08-01 — Paso 1 ejecutado: el núcleo conversacional existe y se verifica solo [🟡 PENDIENTE]
+## 2026-08-01 — Paso 1 ejecutado: el núcleo conversacional existe y se verifica solo [🟡 POR LEER]
 
 **Decisión / entrega**: se construyó el núcleo compartido de la línea conversacional dentro del repo. **Por primera vez la fábrica puede ejecutar su propio paso 1 de Build**: hasta hoy el README de la plantilla mandaba clonar desde `C:\Users\Adela\chaski-agentes\`, ruta inaccesible desde la máquina de trabajo. Todo verificado corriendo, no solo escrito.
 
@@ -309,7 +309,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 **Siguiente**: paso 2 — handoff humano con el guarda en el envío (`nucleo/telegram/enviar.js` + guarda en `sender.js` + `lib/texto.js` compartido), agrupación de mensajes, timeout con `AbortController`, y métricas. Todo dentro del núcleo, sin gate 🔴, porque ya no hay agentes en uso.
 
-## 2026-08-01 — El agente Gesta ya resolvió parte del paso 2: se adoptan sus decisiones [🟡 PENDIENTE]
+## 2026-08-01 — El agente Gesta ya resolvió parte del paso 2: se adoptan sus decisiones [🟡 POR LEER]
 
 **Hallazgo**: al verificar la bitácora de Notion apareció una entrada de José del 2026-07-30 que yo no había visto — *"Buffer de mensajes + auditoría de una guía externa de 9 fixes (Agente WhatsApp Gesta)"*, commits `4da45e9` y `8aec3bb`. El agente de Gesta **ya implementó, con tráfico real detrás, dos de las cuatro cosas del paso 2** de este plan. Se adoptan sus números y sus reglas en vez de los de la directiva, porque los suyos tienen uso real y los de la directiva son teóricos.
 
@@ -323,7 +323,7 @@ Formato: fecha — decisión — contexto — alternativas descartadas. Las deci
 
 **Nota de orden en Notion**: la entrada de Gesta (2026-07-30) quedó **por encima** de las mías del 07-31 y 08-01, así que la bitácora ya no se lee estrictamente de más reciente a más antigua. No se reordenó: mover bloques de ~10.000 caracteres con búsqueda y reemplazo sobre la entrada de otro tiene más riesgo de corromperla que valor tiene el orden. Queda a decisión de José.
 
-## 2026-08-06 — Paso 2: los bugs de producción, escritos dentro del núcleo [🟡 PENDIENTE]
+## 2026-08-06 — Paso 2: los bugs de producción, escritos dentro del núcleo [🟡 POR LEER]
 
 **Qué se construyó.** El núcleo conversacional pasa de 1.0.0 a **1.1.0** con las cuatro cosas del paso 2, todas escritas una sola vez y distribuidas por `MANIFIESTO.json`. No hubo gate 🔴: no hay agentes en uso a los que parchar.
 
@@ -354,7 +354,7 @@ Archivos nuevos del núcleo: `agent/handoff.js`, `agent/buffer.js`, `agent/metri
 
 > **Nota de fechas (2026-08-06)**: el reloj de la máquina de trabajo va 5 días atrasado — marca 2026-08-01 cuando la fecha real es 2026-08-06 (confirmado contra el servidor de Notion). Los commits `bf5529b` y `87ba5a8` quedaron fechados 2026-08-01 por esa razón, no porque el trabajo sea de ese día. Las entradas anteriores de este archivo pueden tener el mismo desfase. Conviene ajustar el reloj del sistema antes de seguir: la fecha de un commit no se puede corregir después sin reescribir historia.
 
-## 2026-08-06 — Paso 3: el arnés de pruebas se generaliza (núcleo 1.2.0) [🟡 PENDIENTE]
+## 2026-08-06 — Paso 3: el arnés de pruebas se generaliza (núcleo 1.2.0) [🟡 POR LEER]
 
 **Deuda cerrada primero.** La entrada anterior dejó declarado que los 18 escenarios del agente de referencia nunca se corrieron. El agente ya no vive en el repo (se eliminó en el paso 2 por la regla de carpeta externa), pero sigue en la historia: se extrajo `clientes/inmobiliaria-demo/agente` de `ade8903` a un temporal **fuera** del repo, se instaló y se corrió. **18/18 en verde.** Antes de correrlo se verificó que no pudiera salir a la red: sin `.env`, `MODO_MOCK = true` hardcodeado y el cliente LLM inyectado. La deuda queda cerrada con evidencia, no por caducidad.
 
@@ -393,7 +393,7 @@ Los índices se mantienen estables a propósito: `ctx.respuestas[i]` apunta siem
 
 ---
 
-## 2026-08-06 — Paso 4: la configuración deja de vivir en variables sueltas (núcleo 1.3.0) [🟡 PENDIENTE]
+## 2026-08-06 — Paso 4: la configuración deja de vivir en variables sueltas (núcleo 1.3.0) [🟡 POR LEER]
 
 **Qué se construyó.** El núcleo pasa de 1.2.0 a **1.3.0** (17 → 24 archivos). Un agente ya no se configura tocando código ni adivinando variables de entorno: se configura en **un archivo declarativo, versionado y validado**, `agente.config.json`, con siete bloques (`cliente`, `identidad`, `canales`, `handoff`, `limites`, `datos`, `metricas`). Lo que antes eran once variables sueltas repartidas entre `.env`, defaults en código y nada, hoy se lee de un vistazo y se revisa en un diff.
 
