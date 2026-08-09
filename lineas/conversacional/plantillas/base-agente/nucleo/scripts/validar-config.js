@@ -61,6 +61,8 @@ async function main() {
   revisarCanales();
   await revisarHerramientas();
   revisarConocimiento();
+  revisarFlujo();
+  revisarLead();
   revisarHitos();
   revisarRailway();
 
@@ -121,6 +123,10 @@ function revisarCanales() {
 // resuelve. Una definición sin implementación es un agente que promete algo y
 // contesta "herramienta desconocida" en producción.
 
+// Las tools que declara el cliente, para que los checks del flujo puedan
+// cruzarlas contra lo que reparte cada agente.
+let toolsDeclaradas = null;
+
 async function revisarHerramientas() {
   let mod;
   try {
@@ -135,6 +141,7 @@ async function revisarHerramientas() {
     errores.push('agent/tools.js no exporta TOOL_DEFINITIONS como array');
     return;
   }
+  toolsDeclaradas = TOOL_DEFINITIONS;
   for (const t of TOOL_DEFINITIONS) {
     if (!t?.name) { errores.push('hay una tool sin "name" en TOOL_DEFINITIONS'); continue; }
     if (!t.description) avisos.push(`la tool "${t.name}" no tiene description: el modelo no sabrá cuándo usarla`);
@@ -182,7 +189,119 @@ function revisarConocimiento() {
   avisos.push(...conocimientoRevisado.avisos.map((a) => `conocimiento: ${a}`));
 }
 
-// ─── 6. Los hitos declarados los marca alguien ───────────────────────────────
+// ─── 6. El flujo multi-agente ────────────────────────────────────────────────
+// El grafo (ids repetidos, entregas al vacío, agentes inalcanzables) ya lo
+// revisó config.js, porque eso impide arrancar. Acá van los cruces que NECESITAN
+// el código del cliente: qué herramientas existen de verdad y qué temas de
+// conocimiento hay. Los tres modos de falla de acá se ven igual en producción —
+// "el bot no sabe hacer eso"— y ninguno tira un error.
+
+let flujoRevisado = null;
+
+function revisarFlujo() {
+  let mod;
+  try {
+    mod = require(path.join(RAIZ, 'agent', 'flujo'));
+  } catch (error) {
+    avisos.push(`no pude cargar agent/flujo.js: ${error.message}`);
+    return;
+  }
+  flujoRevisado = mod.resumen();
+  const declarados = flujoRevisado.agentes;
+  if (!declarados.length) return;                 // agente único: nada que revisar
+
+  if (!resuelto['flujo.activo']) {
+    avisos.push(
+      `hay ${declarados.length} agentes declarados en "flujo.agentes" pero flujo.activo está en false: ` +
+      'el agente corre como uno solo y ese reparto no se aplica'
+    );
+  }
+  if (declarados.length === 1) {
+    avisos.push(
+      'el flujo declara UN solo agente, que es el agente monolítico con un bloque de prompt extra. ' +
+      'Sirve para verificar que activar el flujo no rompe nada; si ya lo comprobaste, agrega el segundo ' +
+      'o borra el bloque "flujo"'
+    );
+  }
+
+  const conocidas = new Set((toolsDeclaradas || []).map((t) => t?.name).filter(Boolean));
+  const repartidas = new Set();
+  let alguienTieneTodas = false;
+
+  for (const a of declarados) {
+    if (!a.titulo || a.titulo === a.id) {
+      avisos.push(`el agente "${a.id}" no tiene "titulo": es lo que lee el modelo para decidir a quién entregarle la conversación`);
+    }
+    if (a.lineas_rol > 40) {
+      errores.push(
+        `el rol de "${a.id}" tiene ${a.lineas_rol} líneas y el tope es 40. Un rol así de largo es el ` +
+        'prompt monolítico otra vez, con el costo extra de repartirlo: pártelo en dos agentes'
+      );
+    }
+
+    if (a.herramientas.includes(mod.TODOS)) {
+      alguienTieneTodas = true;
+    } else {
+      for (const nombre of a.herramientas) {
+        if (toolsDeclaradas && !conocidas.has(nombre)) {
+          errores.push(`el agente "${a.id}" declara la herramienta "${nombre}", que no está en TOOL_DEFINITIONS`);
+        }
+        repartidas.add(nombre);
+      }
+    }
+
+    if (!a.conocimiento.includes(mod.TODOS) && conocimientoRevisado?.intenciones) {
+      for (const intencion of a.conocimiento) {
+        if (!conocimientoRevisado.intenciones.includes(intencion)) {
+          errores.push(`el agente "${a.id}" declara el tema de conocimiento "${intencion}", que no está en el índice`);
+        }
+      }
+    }
+
+    if (!a.herramientas.length && !a.entrega_a.length) {
+      avisos.push(`el agente "${a.id}" no tiene herramientas ni a quién entregarle: solo puede conversar, y de ahí no sale nadie`);
+    }
+  }
+
+  // Una tool que ningún agente reparte es una capacidad que el cliente pagó y
+  // que el modelo no puede usar nunca. Se ve como "el bot no sabe hacer eso".
+  if (!alguienTieneTodas && toolsDeclaradas) {
+    const huerfanas = [...conocidas].filter((n) => !repartidas.has(n));
+    if (huerfanas.length) {
+      errores.push(
+        `estas herramientas existen pero ningún agente del flujo las tiene declaradas: ${huerfanas.join(', ')}. ` +
+        'El modelo no va a poder usarlas nunca'
+      );
+    }
+  }
+}
+
+// ─── 7. Los datos que el agente recuerda ─────────────────────────────────────
+// Mismo espíritu que el check de hitos: un campo declarado que ninguna
+// herramienta recibe nunca se queda para siempre en "te falta", y el agente lo
+// pide una y otra vez — el problema exacto que este bloque venía a resolver.
+
+function revisarLead() {
+  const campos = resuelto['lead.campos'] || [];
+  if (!campos.length || !toolsDeclaradas) return;
+
+  const parametros = new Set();
+  for (const t of toolsDeclaradas) {
+    for (const p of Object.keys(t?.input_schema?.properties || {})) parametros.add(p.toLowerCase());
+  }
+
+  for (const campo of campos) {
+    const claves = (campo.claves.length ? campo.claves : [campo.campo]).map((c) => String(c).toLowerCase());
+    if (!claves.some((c) => parametros.has(c))) {
+      avisos.push(
+        `el campo "${campo.campo}" de lead.campos no coincide con ningún parámetro de ninguna herramienta ` +
+        `(probé: ${claves.join(', ')}). Nunca se va a llenar, y el agente lo pedirá en cada turno`
+      );
+    }
+  }
+}
+
+// ─── 8. Los hitos declarados los marca alguien ───────────────────────────────
 // Un hito declarado que ninguna tool marca produce un panel que informa 0%
 // eternamente, y 0% se lee como "el agente no convierte" cuando en realidad
 // nadie escribió la línea que lo registra. Es búsqueda de texto, así que va
@@ -206,7 +325,7 @@ function revisarHitos() {
   }
 }
 
-// ─── 7. railway.toml al día con los canales ──────────────────────────────────
+// ─── 9. railway.toml al día con los canales ──────────────────────────────────
 
 function revisarRailway() {
   const rutaRailway = path.join(RAIZ, 'railway.toml');
@@ -262,12 +381,32 @@ function informar() {
       : `${conocimientoRevisado.temas} tema(s), tope ${resuelto['conocimiento.tope_palabras']} palabras` +
         (resuelto['conocimiento.activo'] ? '' : ' — APAGADO por conocimiento.activo');
 
+    const flujoLinea = !flujoRevisado?.agentes.length
+      ? 'un solo agente (sin "flujo.agentes" declarados)'
+      : `${flujoRevisado.agentes.length} agentes, empieza en "${flujoRevisado.inicial}"` +
+        (flujoRevisado.activo ? '' : ' — APAGADO por flujo.activo');
+    const leadLinea = (resuelto['lead.campos'] || []).length
+      ? (resuelto['lead.campos'] || []).map((c) => c.campo).join(', ') +
+        (resuelto['lead.activo'] ? '' : ' — APAGADO por lead.activo')
+      : 'no recuerda datos de la persona';
+
     console.log(`   Canales activos : ${canales}`);
     console.log(`   Tablas          : ${tablas}`);
     console.log(`   Handoff         : ${handoff}`);
     console.log(`   Buffer          : ${resuelto['limites.buffer_ms']} ms`);
     console.log(`   Conocimiento    : ${conocimiento}`);
+    console.log(`   Flujo           : ${flujoLinea}`);
+    console.log(`   Recuerda        : ${leadLinea}`);
     console.log(`   Hitos medidos   : ${(resuelto['metricas.hitos'] || []).join(', ') || 'ninguno declarado'}\n`);
+
+    if (flujoRevisado?.agentes.length) {
+      for (const a of flujoRevisado.agentes) {
+        const tools = a.herramientas.length ? a.herramientas.join(', ') : 'ninguna';
+        const salida = a.entrega_a.length ? `→ ${a.entrega_a.join(', ')}` : '(terminal)';
+        console.log(`     · ${a.id.padEnd(18)} ${String(a.lineas_rol).padStart(2)} líneas de rol  ·  ${tools}  ${salida}`);
+      }
+      console.log('');
+    }
   }
 }
 

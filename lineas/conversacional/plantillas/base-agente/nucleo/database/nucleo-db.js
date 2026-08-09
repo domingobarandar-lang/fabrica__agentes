@@ -35,6 +35,37 @@ const memoria = {
 
 const MAX_METRICAS_MEMORIA = 1000;
 
+// LAS COLUMNAS DE estado_canal, EN UN SOLO LUGAR. Mismo motivo que la lista
+// CAMPOS de agent/metricas.js, pero acá el daño es peor: un upsert con una
+// columna que no existe falla ENTERO, y este es el camino por el que se marca
+// `modo_humano`. Un cliente con el DDL viejo y el núcleo nuevo dejaría de poder
+// derivar a una persona — el bot hablaría encima de una ejecutiva — por una
+// columna que se agregó para otra cosa.
+//
+// Se filtra y se avisa fuerte, en vez de dejar que reviente. `agente_actual` y
+// `lead` llegaron con el núcleo 1.5.0 y hay proyectos con la tabla anterior.
+const CAMPOS_ESTADO = [
+  'canal_id', 'modo_humano', 'humano_desde', 'motivo', 'fallos_seguidos',
+  'agente_actual', 'lead', 'updated_at',
+];
+
+const columnasAvisadas = new Set();
+
+function soloColumnas(estado) {
+  const fila = {};
+  for (const [clave, valor] of Object.entries(estado || {})) {
+    if (CAMPOS_ESTADO.includes(clave)) { fila[clave] = valor; continue; }
+    if (!columnasAvisadas.has(clave)) {
+      columnasAvisadas.add(clave);
+      console.warn(
+        `[DB] "${clave}" no es columna de estado_canal y se descarta. ` +
+        'Agrégala a CAMPOS_ESTADO en database/nucleo-db.js y a database/schema-nucleo.sql, o sácala.'
+      );
+    }
+  }
+  return fila;
+}
+
 function baseEnMemoria() {
   return {
     modo: 'memoria',
@@ -51,7 +82,12 @@ function baseEnMemoria() {
         return memoria.estadoCanal.get(canalId) || null;
       },
       async set(canalId, estado) {
-        memoria.estadoCanal.set(canalId, { ...(memoria.estadoCanal.get(canalId) || {}), ...estado });
+        // También en memoria se filtra: si no, un campo de más pasaría todas las
+        // pruebas y solo fallaría en el primer cliente con Supabase de verdad.
+        memoria.estadoCanal.set(canalId, {
+          ...(memoria.estadoCanal.get(canalId) || {}),
+          ...soloColumnas(estado),
+        });
       },
     },
     metricas: {
@@ -157,7 +193,7 @@ function baseEnSupabase({ url, key }) {
       async set(canalId, estado) {
         const { error } = await supabase
           .from(t.estadoCanal)
-          .upsert({ canal_id: canalId, ...estado, updated_at: new Date().toISOString() },
+          .upsert({ canal_id: canalId, ...soloColumnas(estado), updated_at: new Date().toISOString() },
                   { onConflict: 'canal_id' });
         if (error) throw new Error(`[DB] estadoCanal.set: ${error.message}`);
       },
@@ -187,4 +223,4 @@ function crearBaseNucleo() {
   return baseEnSupabase(creds);
 }
 
-module.exports = { crearBaseNucleo, resetMemoria };
+module.exports = { crearBaseNucleo, resetMemoria, CAMPOS_ESTADO };

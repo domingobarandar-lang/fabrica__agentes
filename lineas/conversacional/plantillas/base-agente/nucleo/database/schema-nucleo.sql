@@ -29,12 +29,24 @@ create table if not exists {{PREFIJO}}_sesiones (
 -- humano_desde permite el retorno por timeout, que está APAGADO por defecto
 -- (handoff.timeout_min = null): la derivación es definitiva salvo que el cliente
 -- decida lo contrario.
+--
+-- agente_actual: con qué agente del flujo quedó esta conversación, cuando el
+-- cliente declaró `flujo.agentes`. Vacío en un agente único, que es el default.
+-- lead: lo que ya se sabe de la persona (`lead.campos`), para que el agente no
+-- vuelva a preguntar lo que ya le dijeron — sobre todo al cambiar de agente.
+--
+-- Las columnas de acá tienen que coincidir con CAMPOS_ESTADO de
+-- database/nucleo-db.js: un upsert con una columna que no existe falla entero, y
+-- este es el camino por el que se marca modo_humano. La prueba de humo compara
+-- las dos listas.
 create table if not exists {{PREFIJO}}_estado_canal (
   canal_id        text primary key,
   modo_humano     boolean not null default false,
   humano_desde    timestamptz,
   motivo          text,
   fallos_seguidos integer not null default 0,
+  agente_actual   text,
+  lead            jsonb,
   updated_at      timestamptz not null default now()
 );
 
@@ -62,15 +74,25 @@ create table if not exists {{PREFIJO}}_metricas (
   reintentos       integer,
   tokens_entrada   integer,
   tokens_salida    integer,
-  hito             text
+  hito             text,
+  agente           text
 );
 
 create index if not exists {{PREFIJO}}_metricas_ts_idx on {{PREFIJO}}_metricas (ts desc);
 create index if not exists {{PREFIJO}}_metricas_canal_idx on {{PREFIJO}}_metricas (canal_id, ts);
 
 -- ─── Si ya aplicaste una versión anterior de este archivo ────────────────────
--- Estas columnas llegaron con el núcleo 1.4.0 (panel de métricas). `create
--- table if not exists` NO las agrega a una tabla que ya existe: corre esto.
+-- `create table if not exists` NO agrega columnas a una tabla que ya existe:
+-- corre esto. Es seguro correrlo aunque las columnas ya estén.
+--
+-- Del núcleo 1.4.0 (panel de métricas):
 alter table {{PREFIJO}}_metricas add column if not exists tokens_entrada integer;
 alter table {{PREFIJO}}_metricas add column if not exists tokens_salida  integer;
 alter table {{PREFIJO}}_metricas add column if not exists hito           text;
+
+-- Del núcleo 1.5.0 (flujo multi-agente y datos de la persona). Las dos de
+-- estado_canal son OBLIGATORIAS aunque no uses el flujo: sin ellas, el día que
+-- lo actives el upsert falla entero y con él la derivación a humano.
+alter table {{PREFIJO}}_estado_canal add column if not exists agente_actual text;
+alter table {{PREFIJO}}_estado_canal add column if not exists lead          jsonb;
+alter table {{PREFIJO}}_metricas     add column if not exists agente        text;

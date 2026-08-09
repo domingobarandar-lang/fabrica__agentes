@@ -23,10 +23,30 @@
 const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..');
+const DIA_MS = 86400000;
 
 // ─── Cálculo (puro) ──────────────────────────────────────────────────────────
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// La escalera 50/75/90/100. Existe porque un número suelto ("gastaste US$ 45")
+// no dice nada sin el techo al lado, y porque el aviso tiene que llegar ANTES
+// del 100%: enterarse de que se acabó el tramo gratis el día que se acabó es
+// enterarse tarde.
+const TRAMOS = [
+  { desde: 1.00, tramo: 'excedido', simbolo: '🔴', frase: 'excedido' },
+  { desde: 0.90, tramo: 'critico',  simbolo: '🔴', frase: '90% consumido' },
+  { desde: 0.75, tramo: 'alerta',   simbolo: '🟡', frase: '75% consumido' },
+  { desde: 0.50, tramo: 'aviso',    simbolo: '🟡', frase: '50% consumido' },
+  { desde: 0,    tramo: 'ok',       simbolo: '·',  frase: 'holgado' },
+];
+
+function escalera(usado, tope) {
+  if (!(tope > 0) || usado == null) return null;
+  const pct = usado / tope;
+  const t = TRAMOS.find((x) => pct >= x.desde);
+  return { usado, tope, pct, tramo: t.tramo, simbolo: t.simbolo, frase: t.frase };
+}
 
 function mediana(valores) {
   if (!valores.length) return null;
@@ -43,8 +63,9 @@ function percentil(valores, p) {
 
 /**
  * @param {object[]} filas filas de la tabla de métricas (o de memoria)
- * @param {{ hitosDeclarados?: string[], precioEntrada?: number, precioSalida?: number }} [opciones]
- *        precios en USD por millón de tokens
+ * @param {{ hitosDeclarados?: string[], precioEntrada?: number, precioSalida?: number,
+ *           presupuestoMes?: number, topeTurnosDia?: number }} [opciones]
+ *        precios y presupuesto en USD (precios por millón de tokens)
  */
 function calcular(filas, opciones = {}) {
   const ordenadas = [...filas].sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
@@ -94,6 +115,24 @@ function calcular(filas, opciones = {}) {
     };
   }).sort((a, b) => b.conversaciones - a.conversaciones);
 
+  // ── Agentes del flujo ──
+  // Solo aparece si el cliente partió el agente en varios: en un agente único la
+  // columna viene vacía y esta sección no se dibuja. `terminaron` es la que
+  // importa de verdad — dónde se quedan las conversaciones — porque es la que
+  // dice si partir el agente sirvió de algo o solo agregó pasos.
+  const usoAgentes = new Map();
+  const tocar = (id, campo) => {
+    if (!usoAgentes.has(id)) usoAgentes.set(id, { id, turnos: 0, conversaciones: 0, terminaron: 0 });
+    usoAgentes.get(id)[campo]++;
+  };
+  for (const fs of porCanal.values()) {
+    for (const f of fs) if (f.agente) tocar(f.agente, 'turnos');
+    for (const id of new Set(fs.map((f) => f.agente).filter(Boolean))) tocar(id, 'conversaciones');
+    const ultimo = [...fs].reverse().find((f) => f.agente);
+    if (ultimo) tocar(ultimo.agente, 'terminaron');
+  }
+  const agentes = [...usoAgentes.values()].sort((a, b) => b.turnos - a.turnos);
+
   // ── Herramientas ──
   const usoTools = {};
   for (const f of ordenadas) {
@@ -111,6 +150,49 @@ function calcular(filas, opciones = {}) {
   const precioEntrada = opciones.precioEntrada || 0;
   const precioSalida  = opciones.precioSalida  || 0;
   const hayPrecio = precioEntrada > 0 || precioSalida > 0;
+  const costoUsd = hayPrecio ? (entrada / 1e6) * precioEntrada + (salida / 1e6) * precioSalida : null;
+
+  // ── Ritmo diario, presupuesto y tramo del plan ──
+  // DOS escaleras y no una, porque el gasto se sale de madre por dos caminos
+  // distintos: el del dinero (mensual, se proyecta) y el de la cuota del
+  // proveedor (diaria, NO se promedia). El free tier de Gemini y compañía no se
+  // agota en dólares sino en pedidos por día: un cliente puede estar cruzando al
+  // tramo pagado todos los martes con el costo marcando US$ 0.00 el mes entero.
+  // Por eso el tope del plan se mide contra el día PICO, no contra el promedio.
+  const porDia = new Map();
+  for (const f of ordenadas) {
+    const dia = String(f.ts).slice(0, 10);   // fecha UTC: es la que cuenta la cuota del proveedor, no la del dueño
+    if (!porDia.has(dia)) porDia.set(dia, { dia, turnos: 0 });
+    porDia.get(dia).turnos++;
+  }
+  const dias = [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+  const diaPico = dias.reduce((mx, d) => (!mx || d.turnos > mx.turnos ? d : mx), null);
+
+  // Proyectar desde menos de un día de datos es inventar. Se dice, no se estima.
+  const desdeMs = Date.parse(ordenadas[0]?.ts);
+  const hastaMs = Date.parse(ordenadas[turnos - 1]?.ts);
+  const spanDias = Number.isFinite(desdeMs) && Number.isFinite(hastaMs) && hastaMs > desdeMs
+    ? (hastaMs - desdeMs) / DIA_MS
+    : 0;
+  const proyectable = spanDias >= 1;
+  const costoDia = proyectable && costoUsd != null ? costoUsd / spanDias : null;
+  const costoMes = costoDia != null ? costoDia * 30 : null;
+
+  const presupuestoMes = opciones.presupuestoMes || 0;
+  const topeTurnosDia  = opciones.topeTurnosDia  || 0;
+
+  // Un tope declarado que todavía no se puede medir NO desaparece del panel: se
+  // lista diciendo por qué no se puede medir. Mismo criterio que un hito en 0%.
+  let presupuesto = null;
+  if (presupuestoMes > 0) {
+    presupuesto = costoMes == null
+      ? { tope: presupuestoMes, tramo: 'sin_dato', simbolo: '·',
+          motivo: hayPrecio ? 'ventana_corta' : 'sin_precio' }
+      : { ...escalera(costoMes, presupuestoMes),
+          dias_para_agotar: costoDia > 0 ? Math.floor(presupuestoMes / costoDia) : null };
+  }
+  const planDiario = diaPico ? escalera(diaPico.turnos, topeTurnosDia) : null;
+  if (planDiario) planDiario.dia = diaPico.dia;
 
   return {
     ventana: {
@@ -133,6 +215,7 @@ function calcular(filas, opciones = {}) {
       turnos_medidos: duraciones.length,
     },
     hitos,
+    agentes,
     tools,
     tokens: {
       turnos_con_dato: conTokens.length,
@@ -140,10 +223,19 @@ function calcular(filas, opciones = {}) {
       entrada,
       salida,
       por_conversacion: conversaciones ? Math.round((entrada + salida) / conversaciones) : 0,
-      costo_usd: hayPrecio
-        ? (entrada / 1e6) * precioEntrada + (salida / 1e6) * precioSalida
-        : null,
+      costo_usd: costoUsd,
     },
+    ritmo: {
+      dias_con_datos: dias.length,
+      span_dias: Number(spanDias.toFixed(2)),
+      proyectable,
+      turnos_dia: proyectable ? Math.round(turnos / spanDias) : null,
+      dia_pico: diaPico,
+      costo_usd_dia: costoDia,
+      costo_usd_mes_proyectado: costoMes,
+    },
+    presupuesto,
+    plan_diario: planDiario,
   };
 }
 
@@ -219,6 +311,18 @@ function render(ind, opciones = {}) {
     }
   }
 
+  if (ind.agentes.length) {
+    L.push('');
+    L.push('EN QUÉ PARTE DE LA CONVERSACIÓN   (solo si partiste el agente en varios)');
+    for (const a of ind.agentes) {
+      L.push(`  ${a.id.padEnd(24)} ${String(a.turnos).padStart(5)} turnos  ·  ` +
+             `${String(a.conversaciones).padStart(4)} conv. pasaron  ·  ` +
+             `${String(a.terminaron).padStart(4)} quedaron ahí (${pct(a.terminaron / ind.conversaciones)})`);
+    }
+    L.push('  "Quedaron ahí" es dónde se detuvo cada conversación. Si una parte concentra');
+    L.push('  las que se detienen, ahí está el problema — no en el agente que la precede.');
+  }
+
   if (ind.tools.length) {
     L.push('');
     L.push('HERRAMIENTAS MÁS USADAS');
@@ -245,6 +349,48 @@ function render(ind, opciones = {}) {
         `  ·  US$ ${(ind.tokens.costo_usd / ind.conversaciones).toFixed(5)} por conversación`);
   }
 
+  const r = ind.ritmo;
+  L.push(`  Ritmo    ${r.turnos_dia == null ? '—' : `${miles(r.turnos_dia)} turnos/día`}` +
+         `  ·  día más cargado: ${r.dia_pico ? `${r.dia_pico.dia} con ${miles(r.dia_pico.turnos)} turnos` : '—'}` +
+         `  ·  ${r.dias_con_datos} día(s) con datos`);
+  if (!r.proyectable) {
+    L.push('           (menos de 24 h de datos: no se proyecta nada, proyectar desde acá');
+    L.push('           sería inventar una cifra que después nadie recuerda que era falsa)');
+  }
+
+  // ── Presupuesto y tramo del plan ──
+  // Solo se dibuja si el cliente declaró un techo. Sin techo declarado no hay
+  // nada contra qué comparar, y una escalera con un tope inventado avisaría a la
+  // hora equivocada — que es peor que no avisar.
+  if (ind.presupuesto || ind.plan_diario) {
+    L.push('');
+    L.push('PRESUPUESTO Y TRAMO DEL PLAN');
+
+    const p = ind.presupuesto;
+    if (p && p.tramo === 'sin_dato') {
+      L.push(`  Dinero   ·  tope US$ ${p.tope.toFixed(2)}/mes declarado, todavía sin poder medirlo:`);
+      L.push(p.motivo === 'sin_precio'
+        ? '           falta el precio del proveedor (metricas.precio_usd_millon_*).'
+        : '           hace falta al menos 24 h de conversaciones para proyectar el mes.');
+    } else if (p) {
+      L.push(`  Dinero   ${p.simbolo} [${pct(p.pct)} — ${p.frase}]  proyección US$ ${p.usado.toFixed(2)}/mes ` +
+             `contra un tope de US$ ${p.tope.toFixed(2)}`);
+      if (p.dias_para_agotar != null) {
+        L.push(`           al ritmo actual el presupuesto del mes se agota en ${p.dias_para_agotar} día(s)`);
+      }
+    }
+
+    const d = ind.plan_diario;
+    if (d) {
+      L.push(`  Plan     ${d.simbolo} [${pct(d.pct)} — ${d.frase}]  el día más cargado (${d.dia}) tuvo ` +
+             `${miles(d.usado)} turnos y el tope declarado es ${miles(d.tope)}/día`);
+      if (d.tramo === 'excedido') {
+        L.push('           ese día el agente SE PASÓ de la cuota del plan. Si el plan es un free');
+        L.push('           tier, ahí empezó a cobrar o a rechazar pedidos — revísalo con el proveedor.');
+      }
+    }
+  }
+
   L.push('');
   L.push('LO QUE ESTE PANEL NO PUEDE DECIR');
   L.push('  · Si las respuestas fueron buenas. Cero errores y cero derivaciones también');
@@ -253,6 +399,11 @@ function render(ind, opciones = {}) {
   if (!ind.hitos.length) {
     L.push('  · Cuántas conversaciones terminaron en negocio. Para eso hay que marcar hitos:');
     L.push('    metricas.marcarHito(canalId, "agendo") dentro de la tool que lo consigue.');
+  }
+  if (!ind.presupuesto && !ind.plan_diario) {
+    L.push('  · Si este cliente va camino a salirse de su plan. Declara el techo en');
+    L.push('    metricas.presupuesto_usd_mes y metricas.tope_turnos_dia de agente.config.json');
+    L.push('    y el panel avisa al 50/75/90/100% en vez de al día que ya pasó.');
   }
   L.push('═'.repeat(74));
   return L.join('\n');
@@ -301,6 +452,8 @@ async function main() {
     hitosDeclarados: config.valor('metricas.hitos'),
     precioEntrada: config.valor('metricas.precio_usd_millon_entrada'),
     precioSalida:  config.valor('metricas.precio_usd_millon_salida'),
+    presupuestoMes: config.valor('metricas.presupuesto_usd_mes'),
+    topeTurnosDia:  config.valor('metricas.tope_turnos_dia'),
   });
 
   console.log('\n' + render(ind, {

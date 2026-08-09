@@ -54,11 +54,48 @@
     "tope_palabras": 800
   },
 
+  "_flujo": "Este agente es UNO SOLO, y así debe nacer todo proyecto. Partirlo en varios agentes especializados se decide MIRANDO EL PANEL (npm run metricas) de un cliente que ya conversa: si el agente único mezcla etapas o se salta reglas, ahí se parte. Hacerlo antes deja varios prompts que mantener en vez de uno, sin ninguna evidencia de que hacía falta. Para activarlo, renombra '_flujo_ejemplo' a 'flujo' y ajústalo. Se apaga sin tocar el archivo con FLUJO_ACTIVO=false.",
+
+  "_flujo_ejemplo": {
+    "inicial": "recepcion",
+    "max_saltos_turno": 2,
+    "agentes": [
+      {
+        "_nota": "herramientas NO tiene default: [] es ninguna y ['*'] es todas. Declararlas es el motivo entero de partir el agente.",
+        "id": "recepcion",
+        "titulo": "Recepción",
+        "rol": "Saludas, entiendes en una o dos preguntas qué necesita la persona y le pasas la conversación a quien corresponde. No respondes consultas tú.",
+        "herramientas": [],
+        "conocimiento": [],
+        "entrega_a": ["horarios"]
+      },
+      {
+        "id": "horarios",
+        "titulo": "Horarios de atención",
+        "rol": "Respondes cuándo se atiende. Consultas siempre la herramienta: nunca respondas un horario de memoria.",
+        "herramientas": ["ver_horario"],
+        "entrega_a": ["recepcion"]
+      }
+    ]
+  },
+
+  "_lead_ejemplo": {
+    "_nota": "Lo que el agente recuerda de la persona para no volver a preguntárselo. Se llena solo, mirando los datos que reciben las herramientas: no hay que tocar agent/tools.js. Renombra a 'lead' para activarlo.",
+    "activo": true,
+    "campos": [
+      { "campo": "nombre", "etiqueta": "su nombre", "claves": ["nombre", "nombre_cliente"] },
+      { "campo": "telefono", "etiqueta": "su teléfono", "claves": ["telefono", "celular"], "requerido": false }
+    ]
+  },
+
   "metricas": {
     "_nota": "Los hitos son hechos del NEGOCIO que el panel reporta por conversación. Los marca una tool con metricas.marcarHito(canalId, '<hito>'). Precios en 0 = el panel muestra tokens y no inventa un costo en dólares.",
+    "_nota_topes": "presupuesto_usd_mes y tope_turnos_dia son el techo del plan: con ellos el panel avisa al 50/75/90/100% en vez de al día que ya pasó. Van juntos y miden cosas distintas — el free tier de Gemini se agota en PEDIDOS POR DÍA, así que un cliente puede cruzar al tramo pagado con el costo en US$ 0.00. En 0 el panel no dibuja la escalera. Ejemplo para Gemini free tier: tope_turnos_dia 1400 (deja margen bajo el límite real del plan).",
     "activas": true,
     "hitos": ["consulta_resuelta", "sin_dato"],
     "precio_usd_millon_entrada": 0,
-    "precio_usd_millon_salida": 0
+    "precio_usd_millon_salida": 0,
+    "presupuesto_usd_mes": 0,
+    "tope_turnos_dia": 0
   }
 }

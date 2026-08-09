@@ -35,6 +35,10 @@ const MAX_EN_MEMORIA = 500;
 const CAMPOS = [
   'ts', 'canal_id', 'resultado', 'motivo', 'duracion_ms', 'rondas_tool', 'tools',
   'partes_agrupadas', 'reintentos', 'tokens_entrada', 'tokens_salida', 'hito',
+  // Con qué agente del flujo terminó el turno. Vacío en un agente único. Es lo
+  // que permite al panel decir en qué parte de la conversación se cae la gente,
+  // que es la única forma de saber si partir el agente sirvió de algo.
+  'agente',
 ];
 
 const memoria = [];

@@ -17,8 +17,17 @@
 
 const { esPeticionDeHumano, MENSAJE_DERIVACION } = require('../agent/handoff');
 const conocimiento = require('../agent/conocimiento');
+const flujo = require('../agent/flujo');
 
 const OMITIDA = Symbol('regla omitida');
+
+// Un bot que anuncia que pasa la conversación a otra persona. Hacen falta las
+// DOS piezas —el verbo de entrega y el sustantivo de persona— porque cada una
+// por separado aparece en respuestas perfectamente sanas: "te dejo el horario"
+// no promete a nadie, y "atiende un equipo de tres" tampoco.
+const RE_ENTREGA = /\b(te\s+(paso|derivo|transfiero|comunico|conecto|dejo)|paso\s+(con|a)|deriv[aoáí]\w*|transfier\w+)\b/i;
+const RE_PERSONA =
+  /\b(persona|humano|asesor\w*|ejecutiv[oa]\w*|especialista|compañer[oa]\w*|colega|encargad[oa]\w*|superviso\w+|equipo)\b/i;
 
 // Campos de captura por defecto. `claves` son los nombres de parámetro con que
 // una tool recibe el dato; `rePregunta` es cómo se vería el agente volviendo a
@@ -182,6 +191,27 @@ function construirReglas(cfg) {
           ? `el contenido del tema "${pegado.intencion}" está copiado en el prompt de sistema: ` +
             'se paga en cada turno y la herramienta de conocimiento deja de tener sentido'
           : null;
+      },
+    },
+
+    {
+      id: 'cambio_de_agente_no_finge_humano',
+      titulo: 'Cambiar de agente no se le anuncia a la persona como una derivación',
+      // LA FORMA EN QUE UN FLUJO MULTI-AGENTE MIENTE SIN QUE SE NOTE. El modelo
+      // cambia de etapa —que por dentro es cambiar un bloque del prompt— y se lo
+      // cuenta al cliente como si lo pasara con alguien: "te derivo con un
+      // especialista". Del otro lado eso es indistinguible de un handoff a un
+      // humano de verdad, así que la persona se queda ESPERANDO a alguien que no
+      // existe, y encima deja de escribir. El bot sigue ahí y contesta perfecto:
+      // ninguna prueba funcional lo ve, porque la respuesta es correcta. Lo que
+      // está roto es la promesa.
+      evaluar(t) {
+        const cambio = (t.toolLog || []).some((e) => e.name === flujo.NOMBRE_TOOL && e.result?.ok);
+        if (!cambio) return OMITIDA;
+        if (t.respuesta == null) return null;
+        if (!RE_ENTREGA.test(t.respuesta) || !RE_PERSONA.test(t.respuesta)) return null;
+        return 'cambió de agente y se lo anunció al cliente como si lo pasara con una persona: ' +
+          `"${t.respuesta.slice(0, 90)}". Sigue siendo el mismo bot y nadie más le va a escribir`;
       },
     },
   ];

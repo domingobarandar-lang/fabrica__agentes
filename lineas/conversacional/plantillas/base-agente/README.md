@@ -28,9 +28,11 @@ base-agente/
 | `agent/buffer.js` | Agrupa mensajes seguidos (6 s). Con lista de excepciones que **no** esperan |
 | `agent/metricas.js` | Una fila por turno + hitos de negocio. Nunca puede romper una respuesta |
 | `agent/conocimiento.js` | Lo que el negocio sabe, en archivos: **el índice va al prompt, el corpus no**. Inyecta y resuelve `cargar_conocimiento` |
+| `agent/flujo.js` | Varios agentes especializados declarados en la config. **Viene apagado**. Inyecta y resuelve `cambiar_etapa` |
+| `agent/lead.js` | Lo que ya se sabe de la persona: el bloque *"ya sabes / te falta"*, llenado con lo que reciben las tools |
 | `lib/texto.js` | `dividirMensaje` compartido por todos los canales de envío |
 | `evals/motor.js` | Arnés de pruebas: mock del LLM, runner y reporte. **Bloquea los efectos externos antes de cargar nada** |
-| `evals/reglas.js` | Los 7 invariantes que se verifican solos en cada turno |
+| `evals/reglas.js` | Los 8 invariantes que se verifican solos en cada turno |
 | `evals/perfiles.js` | Transformadores que derivan 8 conversaciones de una sola escrita a mano |
 | `evals/perfiles/_base.json` | El catálogo de los 8 perfiles, como datos |
 | `whatsapp/webhook.js` | Webhook de Meta con validación de firma HMAC-SHA256, fail-closed en producción |
@@ -40,7 +42,8 @@ base-agente/
 | `scripts/generar-railway.js` | `npm run railway`: escribe `railway.toml` según los canales activos |
 | `scripts/schema-nucleo.js` | `npm run schema`: el DDL con el prefijo del cliente ya sustituido |
 | `scripts/chat-local.js` | `npm run chat`: canal terminal. **MOCK por defecto**; gastar tokens exige `--real` |
-| `scripts/panel-metricas.js` | `npm run metricas`: lee la tabla y contesta *¿esto está funcionando?* |
+| `scripts/panel-metricas.js` | `npm run metricas`: lee la tabla y contesta *¿esto está funcionando?*, con la escalera 50/75/90/100 contra el techo del plan |
+| `scripts/listo-para-entrega.js` | `npm run entrega`: compuerta previa a la entrega. **La semilla se declara semilla y esto la caza** |
 | `nixpacks.toml` | Build de Railway |
 | `.gitignore` | Mantiene `.env` fuera del repo del cliente |
 | `.env.example` | **Solo secretos y conexiones.** El comportamiento vive en `agente.config.json` |
@@ -105,6 +108,8 @@ Un agente **no se configura tocando código**. Todo lo que decide cómo se compo
                  "precio_usd_millon_entrada": 0, "precio_usd_millon_salida": 0 }
 }
 ```
+
+Hay dos bloques opcionales más, `flujo` y `lead`, que **no** aparecen acá porque un agente nace siendo uno solo: ver *Partir el agente en varios*, más abajo.
 
 **La precedencia, y es deliberada:**
 
@@ -186,6 +191,65 @@ El costo en dólares solo aparece si se declara el precio del proveedor (`metric
 
 **Sin Supabase el panel no ve nada**, y lo dice: las métricas viven en el proceso del bot y se pierden al reiniciar. Para medir de verdad: `SUPABASE_URL` + `npm run schema` + aplicar el DDL.
 
+## Partir el agente en varios: el bloque `flujo`
+
+**Esto viene apagado, y esa es la parte importante.** Sin `flujo.agentes` en `agente.config.json`, el núcleo toma exactamente el mismo camino que tomaba antes de que existiera `agent/flujo.js`: mismo prompt, mismas herramientas, ni una llamada de más a la base. Un agente que no lo usa no paga nada por que exista.
+
+**Cuándo partirlo.** Cuando el panel de un cliente que ya conversa muestre que el agente único mezcla etapas, se salta reglas que están al final de un prompt largo, o promete cosas que le tocan a otra parte del negocio. **No al crear el proyecto.** La arquitectura de muchos agentes por cliente es *consecuencia* de tener mucha escala, no la causa de haberla conseguido: partirlo antes de tener la evidencia deja varios prompts que mantener en vez de uno, sin haber arreglado nada.
+
+**Qué es un "agente" acá.** No es un archivo de código: es una declaración. Por eso el mismo `agent/prompts.js`, el mismo `agent/tools.js` y los mismos escenarios corren con uno o con cuatro, y lo único que cambia es un JSON.
+
+```json
+"flujo": {
+  "inicial": "recepcion",
+  "max_saltos_turno": 2,
+  "agentes": [
+    { "id": "recepcion", "titulo": "Recepción",
+      "rol": "Saludas, entiendes qué necesita la persona y le pasas la conversación a quien corresponde.",
+      "herramientas": [], "entrega_a": ["agendamiento", "postventa"] },
+    { "id": "agendamiento", "titulo": "Agendamiento de horas",
+      "rol": "Tomas la hora. Confirmas siempre disponibilidad con la herramienta antes de prometer nada.",
+      "herramientas": ["ver_disponibilidad", "agendar"], "conocimiento": [], "entrega_a": ["recepcion"] }
+  ]
+}
+```
+
+- **`herramientas` es obligatorio y `[]` significa "ninguna"**, no "todas" (para todas: `["*"]`). Repartirlas es el motivo entero de partir el agente, así que olvidarlo tiene que verse en la primera prueba y no producir un flujo que en realidad no separa nada. El reparto se aplica **al ejecutar**, no solo al declarar: si el modelo pide una herramienta que este agente no tiene, el núcleo no la ejecuta.
+- **`conocimiento` sí tiene default abierto** (`["*"]`). La asimetría es por el modo de falla: el conocimiento ya se carga solo cuando hace falta, así que restringirlo casi no ahorra nada, y olvidarlo se vería como *"el bot dice que no tiene el dato"* — indistinguible de un negocio que de verdad no lo tiene.
+- **El cambio lo decide el agente que ya está conversando**, con la herramienta `cambiar_etapa` que inyecta el núcleo y una lista **cerrada** de destinos. No hay router: un router es una llamada extra al LLM por turno, y este bloque existe justamente para bajar el costo por turno. El cambio surte efecto **dentro del mismo turno**: el especialista contesta de inmediato en vez de obligar a la persona a escribir otra vez.
+- **Nunca se le anuncia a la persona.** "Te paso con un especialista" es una promesa que nadie va a cumplir: sigue siendo el mismo bot. Está prohibido en el prompt, en la descripción de la herramienta, y hay un invariante (`cambio_de_agente_no_finge_humano`) que pone la suite en rojo si igual ocurre.
+- **`npm run validar` revisa el grafo**: entregas a agentes que no existen, agentes a los que no se llega nunca, herramientas mal escritas, herramientas que ningún agente reparte, y roles de más de 40 líneas (un rol así de largo es el prompt monolítico otra vez).
+- **`FLUJO_ACTIVO=false`** vuelve al agente único desde Railway, sin redeploy, si un flujo nuevo sale mal.
+
+El panel agrega una sección **"en qué parte de la conversación"** con turnos, conversaciones que pasaron y —la que importa— **cuántas se quedaron ahí**: si una parte concentra las que se detienen, el problema está en esa parte, no en la anterior.
+
+**Activar un flujo estricto pone la QA en rojo, y está bien.** Un escenario describe una conversación, y repartir las herramientas cambia la conversación: si el agente inicial ya no tiene `ver_horario`, el guión del mock tiene que pasar primero por `cambiar_etapa`. El arnés lo dice con el escenario y el perfil exactos, así que la corrección es mecánica:
+
+```js
+modelo: [
+  { tools: [{ name: 'cambiar_etapa', input: { etapa: 'horarios' } }] },   // ← agregar
+  { tools: [{ name: 'ver_horario',   input: { dia: 'lunes' } }] },
+  { text: (c) => `El lunes atendemos de ${c.lastResult('ver_horario').horario.abre}…` },
+]
+```
+
+En `expect` hay dos ayudas nuevas: `await ctx.agente()` (en qué agente quedó la conversación) y `await ctx.lead()` (lo que el núcleo recordó de la persona).
+
+## Lo que ya se sabe de la persona: el bloque `lead`
+
+Sirve con un agente solo, pero con varios es **obligatorio**: la forma clásica de fallar de un flujo multi-agente es que el especialista salude de nuevo y vuelva a pedir el teléfono que la recepción ya había tomado.
+
+```json
+"lead": { "activo": true, "campos": [
+  { "campo": "nombre", "etiqueta": "su nombre", "claves": ["nombre", "nombre_cliente"] },
+  { "campo": "telefono", "etiqueta": "su teléfono", "claves": ["telefono", "celular"] }
+] }
+```
+
+El núcleo mira los `input` que el modelo le pasa a las herramientas, guarda lo que reconoce por conversación y lo devuelve al prompt como *"lo que ya sabes / lo que te falta"*. **No hay que tocar `agent/tools.js`.** El precio de eso es que solo se entera de un dato cuando alguna tool lo recibe: lo que la persona dijo y ninguna herramienta usó, no se guarda. `npm run validar` avisa si un campo declarado no coincide con ningún parámetro de ninguna tool — nunca se llenaría, y el agente lo pediría en cada turno.
+
+Los valores entran al prompt y vienen, en última instancia, de lo que escribió un desconocido: se recortan a 80 caracteres y se les quitan los saltos de línea.
+
 ## Probar un agente: `npm test`
 
 ```powershell
@@ -210,7 +274,7 @@ npm test -- --verboso             # imprime todas las conversaciones
 | `fuera_de_tema` | mete una pregunta que no es del rubro | que no invente ni pierda el hilo |
 | `cambia_opinion` | se arrepiente antes de confirmar | que no queden registros fantasma |
 
-**Los 7 invariantes** corren solos en **cada turno de cada escenario**, sin que el cliente escriba nada: no re-preguntar un dato ya capturado · no afirmar datos que ninguna herramienta devolvió · respetar el tope de resultados · responder en ≤600 caracteres · derivar cuando piden una persona · no filtrar el prompt de sistema ni el nombre de una tool · no llevar el corpus de conocimiento dentro del prompt. Todos deterministas. Un invariante que no se puede evaluar con la config que dio el cliente se marca **OMITIDA**, nunca aprobada: un check que no corrió no cuenta como verde.
+**Los 8 invariantes** corren solos en **cada turno de cada escenario**, sin que el cliente escriba nada: no re-preguntar un dato ya capturado · no afirmar datos que ninguna herramienta devolvió · respetar el tope de resultados · responder en ≤600 caracteres · derivar cuando piden una persona · no filtrar el prompt de sistema ni el nombre de una tool · no llevar el corpus de conocimiento dentro del prompt · no anunciar un cambio de agente como si pasaran la conversación a una persona. Todos deterministas. Un invariante que no se puede evaluar con la config que dio el cliente se marca **OMITIDA**, nunca aprobada: un check que no corrió no cuenta como verde.
 
 **Sin juez LLM, a propósito.** Un evaluador con modelo real gastaría tokens en QA, que es regla dura de la fábrica y roza la causa 🔴 nº1 del semáforo. Si algún día entra, va detrás de un proveedor gratuito declarado y de una puerta explícita.
 
@@ -285,6 +349,10 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
 - **Una métrica nueva sin su columna se pierde en silencio.** El `INSERT` se hace con la fila tal cual: una clave que no es columna hace fallar el insert entero, y como los errores de métricas se tragan a propósito (nunca romper una respuesta), la fila desaparece sin rastro hasta que alguien mira una tabla vacía. Por eso la fila se filtra contra `CAMPOS` de `agent/metricas.js` y el humo compara esa lista con `database/schema-nucleo.sql`. Si agregas un campo, tócalos **los dos**.
 - **El corpus de conocimiento nunca se pega en el prompt**, ni siquiera "un ratito para que no falle". No se nota en ninguna respuesta: se nota en la factura, en cada turno, aunque nadie pregunte por el tema. Hay un invariante que lo atrapa.
 - **Los archivos de conocimiento no son un almacén**, son fichas: 800 palabras es el tope y partir un tema en dos es la respuesta correcta, no subir el tope.
+- **Una columna nueva en `estado_canal` es más peligrosa que una en métricas.** Ahí el upsert falla **entero** en vez de tragarse el error, y ese es el camino por el que se marca `modo_humano`: un cliente con el DDL viejo y el núcleo nuevo se quedaría sin poder derivar a una persona, y el bot hablaría encima de una ejecutiva. Por eso la fila se filtra contra `CAMPOS_ESTADO` de `database/nucleo-db.js`, el humo la compara con el DDL, y el DDL trae los `alter table ... add column if not exists` — `create table if not exists` no agrega columnas a una tabla que ya existe.
+- **Repartir herramientas entre agentes hay que hacerlo cumplir al EJECUTAR, no solo al declarar.** La lista de `tools` que se le manda al modelo es una indicación: el despachador del cliente conoce todas sus herramientas y ejecutaría igual la que el modelo pida de más. Sin el guarda en `core.js`, un flujo multi-agente parece separar y no separa nada.
+- **Cambiar de agente no se le anuncia a la persona.** "Te paso con un especialista" es indistinguible, del otro lado, de una derivación a un humano de verdad: la persona se queda esperando a alguien que no existe y deja de escribir. El bot sigue ahí y responde perfecto, así que **ninguna prueba funcional lo ve** — la respuesta es correcta, lo que está roto es la promesa. Hay un invariante para eso.
+- **Si el agente cambia a mitad de turno, el prompt hay que rearmarlo en esa misma ronda.** Armarlo una vez por turno deja al especialista contestando con las instrucciones y las herramientas del anterior, que es peor que no haber cambiado.
 - **La lógica transversal va en `processMessage` de `core.js`, no en un canal.** Todos los canales convergen ahí. Anclarla en el webhook de WhatsApp cuando el agente despliega Telegram significa que no se ejecuta nunca.
 - Dos bots de Telegram no pueden compartir token (conflicto 409): un bot de @BotFather por agente.
 - Supabase: usar la key `service_role`; la `anon` da *permission denied* con RLS.

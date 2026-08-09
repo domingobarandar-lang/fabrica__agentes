@@ -49,6 +49,7 @@ const buffer = require('../agent/buffer');
 const { TOOL_DEFINITIONS } = require('../agent/tools');
 const { buildSystemPrompt } = require('../agent/prompts');
 const conocimiento = require('../agent/conocimiento');
+const flujo = require('../agent/flujo');
 const { db, resetDemo } = require('../database/supabase');
 const { cargarCatalogo, derivar } = require('./perfiles');
 const { construirReglas, OMITIDA } = require('./reglas');
@@ -231,6 +232,12 @@ function crearMotor(cfg = {}) {
     console.log('═'.repeat(74));
     console.log(`Evals — ${configMotor.nombre}   ·   MOCK siempre: 0 tokens, sin credenciales, sin red`);
     console.log(`Hoy (Chile): ${fechas.hoy}   ·   ${casos.length} escenarios × ${perfiles.length} perfiles`);
+    // Qué configuración se probó, dicho en el reporte: la misma suite da
+    // resultados distintos con el flujo encendido y apagado, y "pasó la QA" sin
+    // decir cuál de las dos no significa nada.
+    if (flujo.activo()) {
+      console.log(`Flujo: ${flujo.agentes().length} agentes, empieza en "${flujo.inicial().id}"`);
+    }
     console.log('═'.repeat(74));
 
     const resultados = [];
@@ -302,6 +309,19 @@ function crearMotor(cfg = {}) {
       // herramienta que lo carga y se paga en cada turno.
       get systemPrompt() { return mock.estado.systemPrompt || ''; },
       lastResult: (n) => mock.ctxGuion().lastResult(n),
+      // En qué agente del flujo quedó la conversación. Con un agente único
+      // devuelve null, así que un escenario que la use declara por sí solo que
+      // está probando un flujo.
+      async agente() {
+        if (!flujo.activo()) return null;
+        const estado = await db.estadoCanal.get(canalId);
+        return estado?.agente_actual || flujo.inicial()?.id || null;
+      },
+      // Lo que el núcleo recordó de la persona, para comprobar que un agente no
+      // vuelve a pedir lo que otro ya tomó.
+      async lead() {
+        return (await db.estadoCanal.get(canalId))?.lead || {};
+      },
     };
 
     try {
@@ -364,10 +384,13 @@ function crearMotor(cfg = {}) {
           toolLog: mock.estado.toolLog.slice(antesTools),
           toolLogAcumulado: mock.estado.toolLog,
           // Las del cliente MÁS las que inyecta el núcleo: si no, el invariante
-          // de fuga no cubriría `cargar_conocimiento`, que es una tool que el
-          // cliente nunca declaró y que el modelo igual puede nombrar.
-          toolNames: [...TOOL_DEFINITIONS, ...conocimiento.definiciones(TOOL_DEFINITIONS)]
-            .map((t) => t.name),
+          // de fuga no cubriría `cargar_conocimiento` ni `cambiar_etapa`, que son
+          // tools que el cliente nunca declaró y que el modelo igual puede
+          // nombrarle a un cliente final.
+          toolNames: [
+            ...[...TOOL_DEFINITIONS, ...conocimiento.definiciones(TOOL_DEFINITIONS)].map((t) => t.name),
+            ...(flujo.activo() ? [flujo.NOMBRE_TOOL] : []),
+          ],
           systemPrompt: mock.estado.systemPrompt || safeSystemPrompt(),
           perfil,
         };

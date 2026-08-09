@@ -223,11 +223,24 @@ function temas() {
 const hay = () => leer().temas.length > 0;
 
 /**
+ * Los temas que ve quien está atendiendo. `intenciones` la pasa agent/flujo.js
+ * cuando el agente en curso declara un subconjunto; `null` (el default y el
+ * caso de un agente único) son todos.
+ */
+function visibles(intenciones) {
+  const { temas: lista } = leer();
+  if (!Array.isArray(intenciones)) return lista;
+  const permitidas = new Set(intenciones);
+  return lista.filter((t) => permitidas.has(t.intencion));
+}
+
+/**
  * Definición de la herramienta, o [] si este agente no tiene conocimiento.
  * @param {object[]} [existentes] TOOL_DEFINITIONS del cliente, para no chocar
+ * @param {string[]|null} [intenciones] subconjunto visible; null = todas
  */
-function definiciones(existentes = []) {
-  const { temas: lista } = leer();
+function definiciones(existentes = [], intenciones = null) {
+  const lista = visibles(intenciones);
   if (!lista.length) return [];
 
   // Un cliente que ya definió su propia `cargar_conocimiento` gana: mandar dos
@@ -268,8 +281,8 @@ const esTool = (nombre) => nombre === NOMBRE_TOOL;
  * Lo agrega el núcleo en agent/core.js para que un cliente que reescriba
  * prompts.js —cosa que hacen todos— no se quede sin él.
  */
-function bloqueIndice() {
-  const { temas: lista } = leer();
+function bloqueIndice(intenciones = null) {
+  const lista = visibles(intenciones);
   if (!lista.length) return '';
 
   const filas = lista.map((t) => {
@@ -289,8 +302,8 @@ function bloqueIndice() {
 }
 
 /** Prompt del cliente + índice. Si no hay conocimiento, devuelve el prompt tal cual. */
-function anexarIndice(prompt) {
-  const bloque = bloqueIndice();
+function anexarIndice(prompt, intenciones = null) {
+  const bloque = bloqueIndice(intenciones);
   return bloque ? `${prompt}\n${bloque}` : prompt;
 }
 
@@ -298,10 +311,13 @@ function anexarIndice(prompt) {
 
 /**
  * @param {{ intencion?: string }} input lo que pidió el modelo
+ * @param {string[]|null} [intenciones] subconjunto visible para quien atiende.
+ *        Se comprueba también acá, y no solo en el enum del esquema, por lo
+ *        mismo de siempre: lo que el modelo escribe es entrada no confiable.
  * @returns {object} resultado serializable para el tool_result
  */
-function ejecutar(input = {}) {
-  const { temas: lista } = leer();
+function ejecutar(input = {}, intenciones = null) {
+  const lista = visibles(intenciones);
   const pedida = String(input?.intencion || '').trim();
   const tema = lista.find((t) => t.intencion === pedida);
 
@@ -362,7 +378,7 @@ function muestrasDelCorpus() {
 
 // ─── Para el validador ───────────────────────────────────────────────────────
 
-/** @returns {{ errores: string[], avisos: string[], temas: number, carpeta: string|null }} */
+/** @returns {{ errores, avisos, temas, carpeta, intenciones }} */
 function revisar() {
   _recargar();
   const estado = leer();
@@ -371,6 +387,9 @@ function revisar() {
     avisos: estado.avisos,
     temas: estado.temas.length,
     carpeta: estado.carpeta,
+    // Para que el validador pueda cruzar `flujo.agentes[].conocimiento` contra
+    // los temas que existen de verdad.
+    intenciones: estado.temas.map((t) => t.intencion),
   };
 }
 
@@ -379,6 +398,7 @@ module.exports = {
   NOMBRE_TOOL,
   hay,
   temas,
+  visibles,
   definiciones,
   esTool,
   ejecutar,

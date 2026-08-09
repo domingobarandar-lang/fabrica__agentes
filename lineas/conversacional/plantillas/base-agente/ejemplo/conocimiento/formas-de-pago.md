@@ -1,3 +1,6 @@
+<!-- SEMILLA: tema de ejemplo de la fábrica. Reescríbelo con el negocio real del
+     cliente y borra esta línea. Mientras siga acá, `npm run entrega` bloquea. -->
+
 # Formas de pago
 
 Este archivo es producto del cliente: se edita sin tocar código y sin desplegar.
