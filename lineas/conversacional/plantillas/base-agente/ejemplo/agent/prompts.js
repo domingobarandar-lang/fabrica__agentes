@@ -6,9 +6,15 @@
 // LA IDENTIDAD SALE DE agente.config.json (`identidad.*`), no de una cadena
 // escrita acá: cambiarle el nombre, el tono o los límites al agente es lo que
 // más se pide en una marcha blanca, y hacerlo tocando código significa que cada
-// ajuste pasa por un programador. Lo que NO sale de la config es el resto: las
-// reglas duras y el formato son criterio de la fábrica, y un cliente no debería
-// poder apagarlas editando un JSON.
+// ajuste pasa por un programador.
+//
+// LA FORMA NO ESTÁ ACÁ, Y ESO ES A PROPÓSITO (desde la 1.7.0). Este archivo
+// tenía un bloque FORMATO —mensajes cortos, sin Markdown, un emoji— y era el
+// lugar equivocado: se reescribe entero en cada cliente, así que lo que más
+// decide si el agente se siente humano o robótico era justo lo primero que se
+// borraba. Ahora lo anexa el núcleo (agent/estilo.js), se configura en
+// `estilo.*` y lo verifican cinco invariantes del arnés. Al reescribir este
+// archivo NO hay que acordarse de copiar nada de eso.
 //
 // Al personalizar un cliente, este archivo se REESCRIBE entero. Es producto,
 // no infraestructura.
@@ -46,10 +52,6 @@ ${limites}
 REGLA DURA: solo puedes mencionar datos que devolvió una herramienta en este
 turno. Si no lo devolvió una herramienta, no existe. Si no tienes el dato,
 dilo y ofrece averiguarlo. Nunca inventes horarios, precios ni direcciones.
-
-FORMATO:
-- Respuestas cortas (2 a 4 líneas), máximo un emoji por mensaje.
-- Sin Markdown ni asteriscos: es mensajería, no un documento.
 
 FECHA Y HORA ACTUAL: ${ahora}.`;
 }

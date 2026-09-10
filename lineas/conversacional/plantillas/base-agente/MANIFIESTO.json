@@ -1,5 +1,5 @@
 {
-  "version": "1.6.0",
+  "version": "1.7.0",
   "descripcion": "Mapa origen→destino del núcleo conversacional. Lo consumen sincronizar-nucleo.ps1 (para instalar en un proyecto) y nucleo/scripts/humo.js (para armar el overlay de prueba). Una sola fuente de verdad: si un archivo no está acá, no viaja.",
 
   "nucleo": [
@@ -15,6 +15,7 @@
     { "origen": "nucleo/agent/conocimiento.js", "destino": "agent/conocimiento.js", "nota": "índice al prompt, corpus en archivos; inyecta y resuelve la tool cargar_conocimiento" },
     { "origen": "nucleo/agent/flujo.js",       "destino": "agent/flujo.js",       "nota": "varios agentes especializados por config; APAGADO sin flujo.agentes. Inyecta y resuelve cambiar_etapa" },
     { "origen": "nucleo/agent/lead.js",        "destino": "agent/lead.js",        "nota": "lo que ya se sabe de la persona: bloque \"ya sabes / te falta\" desde los input de las tools" },
+    { "origen": "nucleo/agent/estilo.js",      "destino": "agent/estilo.js",      "nota": "cómo escribe: contrato de forma del chat. Anexa el bloque al prompt y limpia/parte en el ENVÍO, nunca en core.js" },
     { "origen": "nucleo/lib/texto.js",         "destino": "lib/texto.js",         "nota": "dividirMensaje compartido por todos los canales de envío" },
     { "origen": "nucleo/evals/motor.js",       "destino": "evals/motor.js",       "nota": "arnés de evaluación: mock del LLM, runner y reporte. Bloquea los efectos externos antes de cargar nada" },
     { "origen": "nucleo/evals/reglas.js",      "destino": "evals/reglas.js",      "nota": "invariantes deterministas que corren solos en cada turno" },

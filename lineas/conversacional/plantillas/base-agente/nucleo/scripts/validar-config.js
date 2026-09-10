@@ -390,10 +390,18 @@ function informar() {
         (resuelto['lead.activo'] ? '' : ' — APAGADO por lead.activo')
       : 'no recuerda datos de la persona';
 
+    const estiloLinea = !resuelto['estilo.activo']
+      ? 'APAGADO — el agente escribe como salga (comportamiento previo a la 1.7.0)'
+      : `hasta ${resuelto['estilo.max_caracteres']} caracteres` +
+        `, ${resuelto['estilo.max_burbujas']} mensaje(s) seguidos` +
+        `, ${resuelto['estilo.max_emojis']} emoji(s)` +
+        (resuelto['estilo.una_pregunta'] ? ', una pregunta por mensaje' : ', varias preguntas por mensaje');
+
     console.log(`   Canales activos : ${canales}`);
     console.log(`   Tablas          : ${tablas}`);
     console.log(`   Handoff         : ${handoff}`);
     console.log(`   Buffer          : ${resuelto['limites.buffer_ms']} ms`);
+    console.log(`   Escribe         : ${estiloLinea}`);
     console.log(`   Conocimiento    : ${conocimiento}`);
     console.log(`   Flujo           : ${flujoLinea}`);
     console.log(`   Recuerda        : ${leadLinea}`);

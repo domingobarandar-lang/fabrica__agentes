@@ -30,9 +30,10 @@ base-agente/
 | `agent/conocimiento.js` | Lo que el negocio sabe, en archivos: **el índice va al prompt, el corpus no**. Inyecta y resuelve `cargar_conocimiento` |
 | `agent/flujo.js` | Varios agentes especializados declarados en la config. **Viene apagado**. Inyecta y resuelve `cambiar_etapa` |
 | `agent/lead.js` | Lo que ya se sabe de la persona: el bloque *"ya sabes / te falta"*, llenado con lo que reciben las tools |
-| `lib/texto.js` | `dividirMensaje` compartido por todos los canales de envío |
+| `agent/estilo.js` | **Cómo escribe**: el contrato de forma del chat. Pide el estilo en el prompt y lo hace cumplir en el **envío** |
+| `lib/texto.js` | `dividirMensaje` (tope de 4096 del canal), compartido por todos los canales de envío |
 | `evals/motor.js` | Arnés de pruebas: mock del LLM, runner y reporte. **Bloquea los efectos externos antes de cargar nada** |
-| `evals/reglas.js` | Los 8 invariantes que se verifican solos en cada turno |
+| `evals/reglas.js` | Los 13 invariantes que se verifican solos en cada turno (5 son del contrato de forma) |
 | `evals/perfiles.js` | Transformadores que derivan 8 conversaciones de una sola escrita a mano |
 | `evals/perfiles/_base.json` | El catálogo de los 8 perfiles, como datos |
 | `whatsapp/webhook.js` | Webhook de Meta con validación de firma HMAC-SHA256, fail-closed en producción |
@@ -96,6 +97,7 @@ Un agente **no se configura tocando código**. Todo lo que decide cómo se compo
 {
   "cliente":   { "id": "petshop-lira", "nombre": "Petshop Lira", "vertical": "retail", "zona_horaria": "America/Santiago" },
   "identidad": { "nombre_agente": "Lira", "rol": "…", "tono": "…", "no_hacer": ["…"] },
+  "estilo":    { "activo": true, "max_caracteres": 600, "max_burbujas": 3, "max_emojis": 1, "una_pregunta": true },
   "canales":   { "telegram": { "activo": true, "token_env": "TELEGRAM_TOKEN" },
                  "whatsapp": { "activo": false }, "terminal": { "activo": true } },
   "handoff":   { "activo": true, "timeout_min": null, "max_fallos": 3, "inbox": "" },
@@ -250,6 +252,39 @@ El núcleo mira los `input` que el modelo le pasa a las herramientas, guarda lo 
 
 Los valores entran al prompt y vienen, en última instancia, de lo que escribió un desconocido: se recortan a 80 caracteres y se les quitan los saltos de línea.
 
+## Cómo escribe el agente: el bloque `estilo`
+
+`identidad.tono` es la **voz** y la pone el cliente ("cercano", "formal"). `estilo` es la **forma** y la pone la fábrica: es lo que hace que un agente se sienta una persona escribiendo por WhatsApp en vez de un informe llegando por WhatsApp.
+
+```json
+"estilo": { "activo": true, "max_caracteres": 600, "max_burbujas": 3, "max_emojis": 1, "una_pregunta": true }
+```
+
+**Por qué está en el núcleo y no en el prompt del cliente.** Hasta la 1.6.0 estas reglas vivían en un bloque `FORMATO` dentro de `agent/prompts.js`… que es justo el archivo que **se reescribe entero** al personalizar un cliente. O sea que lo que más decide si el agente suena humano era lo primero que se borraba, y nadie se enteraba: el bot responde bien, solo que escribe como folleto.
+
+**Dos mitades, en dos lugares distintos, a propósito:**
+
+| Mitad | Dónde corre | Qué hace |
+|---|---|---|
+| `anexar()` | en el prompt, cada ronda | **pide** el estilo: chat, sin Markdown, una pregunta, saludar una sola vez |
+| `prepararEnvio()` | en el **envío** (`telegram/enviar.js`, `whatsapp/sender.js`) | **hace cumplir**: limpia el Markdown que el canal no renderiza y parte la respuesta en burbujas |
+
+La limpieza **no** está en `core.js` y eso es la parte importante: el arnés de evals llama a `processMessage`, así que limpiar antes de devolver el texto dejaría a los invariantes mirando una respuesta ya limpia — un prompt que pide informes pasaría verde para siempre. Con la limpieza en el envío, **QA ve el texto crudo y se pone rojo, y el cliente final ve el texto limpio**.
+
+**Burbujas.** Una respuesta con una línea en blanco al medio sale como dos mensajes seguidos, que es como escribe una persona. El corte es **solo** en línea en blanco: cortar por frases partiría "Dr. Pérez" en dos mensajes, peor que el muro de texto que vino a arreglar. `max_burbujas: 1` lo apaga.
+
+**Los cinco invariantes que lo verifican** (todos se declaran OMITIDOS con `estilo.activo: false`):
+
+| Invariante | La regresión que atrapa |
+|---|---|
+| `sin_markdown_en_el_chat` | `**negritas**`, `## títulos`, enlaces de Markdown y listas de 3+ viñetas. Una o dos viñetas las escribe una persona; tres son un informe |
+| `una_pregunta_por_mensaje` | Dos preguntas juntas: la gente contesta una y la otra se pierde |
+| `no_vuelve_a_saludar` | El "¡Hola! ¿En qué te ayudo?" en el mensaje ocho. No aplica si la persona saludó: devolver el saludo es lo que hace cualquiera |
+| `no_habla_como_maquina` | "según mi base de datos", "no estoy programado para", "estimado usuario" |
+| `respeta_tope_emojis` | El bot esforzándose por caer simpático. `max_emojis: 0` es legítimo en rubros serios |
+
+`estilo.max_caracteres` es además **el tope que usa `respuesta_breve`**: el prompt le pide al modelo el mismo número que el arnés verifica. La suite del cliente todavía puede pisarlo con `maxChars` en `evals/correr.js`.
+
 ## Probar un agente: `npm test`
 
 ```powershell
@@ -320,7 +355,7 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
    **Nunca asumir Anthropic por defecto**: es regla dura de `CLAUDE.md`, y ya nos mordió una vez (un agente quedó con `ANTHROPIC_*` en su `.env.example` y sin las `LLM_*`).
 2b. **Llenar `agente.config.json`** — nombre, identidad, canales, prefijo de tablas. Es lo primero que hay que dejar bien: de ahí salen el prompt, el `railway.toml` y los nombres de las tablas. `npm run validar` antes de seguir.
 3. **Escribir el producto** — acá va el tiempo:
-   - `agent/prompts.js` — alcance y reglas del rubro (la identidad ya viene de la config).
+   - `agent/prompts.js` — alcance y reglas del rubro (la identidad ya viene de la config). **Las reglas de forma no van acá**: el contrato de estilo lo anexa el núcleo y se configura en `estilo.*`.
    - `agent/tools.js` — las acciones del vertical. Validación de negocio **dentro** de la tool, nunca confiada al modelo. Tope duro de resultados.
    - `database/schema.sql` + el bloque de dominio de `database/supabase.js` — las tablas del rubro. Las tres del núcleo (`sesiones`, `estado_canal`, `metricas`) ya vienen: `npm run schema`.
    - `evals/escenarios.js` — los escenarios. CU-* del SPEC y ADV-* adversariales. Solo el camino feliz de cada uno: los ocho perfiles los deriva el motor.
@@ -353,6 +388,8 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
 - **Repartir herramientas entre agentes hay que hacerlo cumplir al EJECUTAR, no solo al declarar.** La lista de `tools` que se le manda al modelo es una indicación: el despachador del cliente conoce todas sus herramientas y ejecutaría igual la que el modelo pida de más. Sin el guarda en `core.js`, un flujo multi-agente parece separar y no separa nada.
 - **Cambiar de agente no se le anuncia a la persona.** "Te paso con un especialista" es indistinguible, del otro lado, de una derivación a un humano de verdad: la persona se queda esperando a alguien que no existe y deja de escribir. El bot sigue ahí y responde perfecto, así que **ninguna prueba funcional lo ve** — la respuesta es correcta, lo que está roto es la promesa. Hay un invariante para eso.
 - **Si el agente cambia a mitad de turno, el prompt hay que rearmarlo en esa misma ronda.** Armarlo una vez por turno deja al especialista contestando con las instrucciones y las herramientas del anterior, que es peor que no haber cambiado.
+- **Lo que vale para todos los clientes no puede vivir en un archivo que cada cliente reescribe.** Las reglas de forma estaban en el bloque `FORMATO` de `agent/prompts.js`, y `prompts.js` se reescribe entero al personalizar: el contrato se perdía en silencio y el agente empezaba a escribir como documento. Es el mismo razonamiento por el que el índice del conocimiento lo anexa el núcleo. Si escribes una regla que vale para **todos** los agentes, va en el núcleo o no existe.
+- **Un limpiador de salida puede tapar el defecto que debería denunciar.** `prepararEnvio` limpia el Markdown antes de enviar, así que si además corriera dentro de `processMessage`, el arnés vería la respuesta ya limpia y ningún invariante se pondría rojo nunca. Por eso la limpieza está en el envío y no en el core: **QA mira el crudo, el cliente final ve el limpio.**
 - **La lógica transversal va en `processMessage` de `core.js`, no en un canal.** Todos los canales convergen ahí. Anclarla en el webhook de WhatsApp cuando el agente despliega Telegram significa que no se ejecuta nunca.
 - Dos bots de Telegram no pueden compartir token (conflicto 409): un bot de @BotFather por agente.
 - Supabase: usar la key `service_role`; la `anon` da *permission denied* con RLS.

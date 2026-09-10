@@ -18,6 +18,7 @@ const handoff      = require('./handoff');
 const buffer       = require('./buffer');
 const metricas     = require('./metricas');
 const conocimiento = require('./conocimiento');
+const estilo       = require('./estilo');
 const flujo        = require('./flujo');
 const lead         = require('./lead');
 const config       = require('../config');
@@ -246,6 +247,10 @@ async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
     const herramientas = herramientasVigentes();
     const intenciones  = flujo.intencionesDe(agente);
     let system = buildSystemPrompt();
+    // El contrato de forma va PEGADO al prompt del cliente y antes que todo lo
+    // demás: `prompts.js` se reescribe entero en cada cliente, así que dejarlo
+    // ahí es dejarlo a que alguien se acuerde de copiarlo. Ver agent/estilo.js.
+    system = estilo.anexar(system);
     system = flujo.anexarRol(system, agente);
     system = lead.anexar(system, datosLead);
     system = conocimiento.anexarIndice(system, intenciones);

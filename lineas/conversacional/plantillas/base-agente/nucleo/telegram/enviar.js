@@ -7,10 +7,11 @@
 // cliente, basta que un cliente se quede atrás para que un handoff termine
 // mandándole al usuario "estoy teniendo problemas técnicos".
 
-const { dividirMensaje } = require('../lib/texto');
+const { prepararEnvio } = require('../agent/estilo');
 
 /**
- * Envía un texto por Telegram, partido si excede el tope.
+ * Envía un texto por Telegram: limpio de formato de documento y partido
+ * en los mensajes seguidos que declara `estilo.max_burbujas`.
  *
  * @param {object} bot    instancia de node-telegram-bot-api
  * @param {number|string} chatId
@@ -20,7 +21,7 @@ async function enviarTelegram(bot, chatId, texto) {
   // GUARDA DE SILENCIO — primera línea, sin excepciones.
   if (texto == null) return;
 
-  for (const parte of dividirMensaje(texto)) {
+  for (const parte of prepararEnvio(texto)) {
     try {
       await bot.sendMessage(chatId, parte, { parse_mode: 'Markdown' });
     } catch {

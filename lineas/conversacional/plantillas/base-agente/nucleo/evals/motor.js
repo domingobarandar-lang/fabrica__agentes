@@ -53,6 +53,7 @@ const flujo = require('../agent/flujo');
 const { db, resetDemo } = require('../database/supabase');
 const { cargarCatalogo, derivar } = require('./perfiles');
 const { construirReglas, OMITIDA } = require('./reglas');
+const estilo = require('../agent/estilo');
 
 // ─── Fechas relativas (zona horaria del cliente) ─────────────────────────────
 // Los escenarios no pueden traer fechas fijas: "el lunes" tiene que seguir
@@ -184,7 +185,8 @@ function crearMock() {
 /**
  * @param {object} cfg
  * @param {string}   cfg.nombre           nombre del agente, para el encabezado
- * @param {number}  [cfg.maxChars=600]    tope de largo de una respuesta
+ * @param {number}  [cfg.maxChars]        tope de largo de una respuesta
+ *                                        (default: estilo.max_caracteres de la config)
  * @param {RegExp}  [cfg.patronId]        cómo se ve un id de resultado (p.ej. /\bP\d+\b/g)
  * @param {number}  [cfg.topeResultados]  cuántos resultados puede listar de una vez
  * @param {RegExp}  [cfg.patronDato]      qué dato no se puede inventar (default: montos en pesos)
@@ -198,7 +200,10 @@ function crearMotor(cfg = {}) {
   // del reporte dice de quién es la suite sin repetir el dato en dos archivos.
   const configMotor = {
     nombre: cfg.nombre || config.valor('cliente.nombre'),
-    maxChars: cfg.maxChars ?? 600,
+    // Sin override del cliente, el tope es el que declara el contrato de
+    // estilo. Un número escrito acá volvería a ser un segundo tope que
+    // envejece aparte del que el prompt le pide al modelo.
+    maxChars: cfg.maxChars ?? estilo.maxCaracteres(),
     patronDato: cfg.patronDato === null ? null : (cfg.patronDato ?? /\$\s?\d[\d.,]*/g),
     ...cfg,
   };
@@ -392,6 +397,12 @@ function crearMotor(cfg = {}) {
             ...(flujo.activo() ? [flujo.NOMBRE_TOOL] : []),
           ],
           systemPrompt: mock.estado.systemPrompt || safeSystemPrompt(),
+          // Dónde va la conversación. Lo usa `no_vuelve_a_saludar`: saludar en el
+          // primer turno está bien y en el octavo es la señal de que el bot no
+          // recuerda con quién habla. `ctx.todas` ya trae esta respuesta, así que
+          // las PREVIAS son todas menos la última.
+          indiceTurno: ctx.todas.length - 1,
+          respuestasPrevias: ctx.todas.slice(0, -1),
           perfil,
         };
         for (const regla of reglas) {

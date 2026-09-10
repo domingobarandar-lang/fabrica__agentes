@@ -18,6 +18,7 @@
 const { esPeticionDeHumano, MENSAJE_DERIVACION } = require('../agent/handoff');
 const conocimiento = require('../agent/conocimiento');
 const flujo = require('../agent/flujo');
+const estilo = require('../agent/estilo');
 
 const OMITIDA = Symbol('regla omitida');
 
@@ -59,7 +60,11 @@ const normal = (s) => String(s || '').toLowerCase();
  */
 function construirReglas(cfg) {
   const campos = { ...CAMPOS_CAPTURA, ...(cfg.camposCaptura || {}) };
-  const maxChars = cfg.maxChars ?? 600;
+  // El tope sale del contrato de estilo (`estilo.max_caracteres`), no de un
+  // número escrito acá: el prompt le pide al modelo ese mismo tope, y dos
+  // números distintos para la misma regla es cómo se llega a una suite verde
+  // sobre respuestas que en el chat se ven larguísimas.
+  const maxChars = cfg.maxChars ?? estilo.maxCaracteres();
 
   return [
     {
@@ -125,6 +130,116 @@ function construirReglas(cfg) {
         if (t.respuesta == null) return null;
         return t.respuesta.length > maxChars
           ? `respondió ${t.respuesta.length} caracteres (tope ${maxChars}) — es mensajería, no un documento`
+          : null;
+      },
+    },
+
+    // ── El contrato de forma (agent/estilo.js) ───────────────────────────────
+    // Las cinco reglas de acá abajo son las que separan un agente que se siente
+    // una persona escribiendo de uno que se siente un sistema respondiendo. Son
+    // deterministas y no dependen del rubro: un bot dental y uno inmobiliario
+    // dicen cosas distintas, pero los dos suenan a máquina cuando mandan viñetas,
+    // tres preguntas juntas o vuelven a saludar en el mensaje ocho.
+    //
+    // TODAS SE OMITEN CON `estilo.activo: false`: es la palanca de emergencia
+    // que vuelve al comportamiento de la 1.6.0, y una regla que no se puede
+    // evaluar con la config del cliente se declara OMITIDA, nunca aprobada.
+
+    {
+      id: 'sin_markdown_en_el_chat',
+      titulo: 'No manda formato de documento por un canal de mensajería',
+      // La regresión: el modelo, entregado a sí mismo, escribe como escribe un
+      // informe — **negritas**, ## títulos, listas de seis viñetas. En WhatsApp
+      // los asteriscos se ven literales y la lista convierte una respuesta en un
+      // folleto. agent/estilo.js lo limpia ANTES de enviar, así que el cliente
+      // final nunca lo ve: por eso el único lugar donde esto puede aparecer es
+      // acá, mirando el texto crudo. Sin esta regla, un prompt que pide informes
+      // quedaría tapado por el limpiador para siempre.
+      evaluar(t) {
+        if (!estilo.activo()) return OMITIDA;
+        if (t.respuesta == null) return null;
+        const marcas = estilo.marcasDeDocumento(t.respuesta);
+        return marcas.length
+          ? `escribe con ${marcas.join(' y ')}: es mensajería, no un documento`
+          : null;
+      },
+    },
+
+    {
+      id: 'una_pregunta_por_mensaje',
+      titulo: 'Hace una sola pregunta por mensaje',
+      // Dos preguntas en el mismo mensaje se leen como formulario, y la persona
+      // contesta UNA. El agente da por respondida la otra o la vuelve a
+      // preguntar; en los dos casos la conversación se alarga y se siente un
+      // trámite. Es la forma más común de que un bot "no escuche".
+      evaluar(t) {
+        if (!estilo.activo() || !estilo.unaPregunta()) return OMITIDA;
+        if (t.respuesta == null) return null;
+        const n = estilo.preguntas(t.respuesta);
+        return n > 1
+          ? `hace ${n} preguntas en el mismo mensaje: la gente contesta una sola y la otra queda perdida`
+          : null;
+      },
+    },
+
+    {
+      id: 'no_vuelve_a_saludar',
+      titulo: 'No saluda de nuevo a alguien con quien ya viene hablando',
+      // El "Hola, ¿en qué puedo ayudarte?" en el mensaje ocho es la señal más
+      // barata de que del otro lado no hay nadie: ninguna persona saluda dos
+      // veces en la misma conversación. Ninguna prueba funcional lo ve, porque
+      // la respuesta es correcta — lo roto es que se nota la máquina.
+      evaluar(t) {
+        if (!estilo.activo()) return OMITIDA;
+        if (t.respuesta == null) return OMITIDA;
+        // Solo si ya hubo una respuesta antes: saludar en el primer turno está
+        // bien, y saludar después de un silencio del bot no es re-saludar.
+        if (!(t.respuestasPrevias || []).some((r) => r != null)) return OMITIDA;
+        // Y solo si la persona NO saludó: devolver el saludo a quien saluda es
+        // lo que hace cualquiera. Esta línea la escribió la propia suite de la
+        // semilla — sin ella, tres perfiles (insistente, fuera_de_tema,
+        // cambia_opinion) se ponían rojos sobre una conversación correcta, y un
+        // invariante que se queja de lo bien hecho termina apagado por el
+        // primero que lo mire.
+        if (t.mensajesUsuario.some((m) => estilo.abreSaludando(m))) return OMITIDA;
+        return estilo.abreSaludando(t.respuesta)
+          ? `vuelve a saludar en el turno ${t.indiceTurno + 1} sin que nadie lo haya saludado: ` +
+            `"${t.respuesta.slice(0, 50)}…"`
+          : null;
+      },
+    },
+
+    {
+      id: 'no_habla_como_maquina',
+      titulo: 'No habla de sí mismo como sistema',
+      // "Según mi base de datos", "no estoy programado para", "estimado usuario".
+      // El cliente escribió por WhatsApp esperando que le contesten; esto le
+      // recuerda que le contestó un software, y encima suena a excusa. El bloque
+      // del prompt lo pide (agent/estilo.js) y esto lo verifica.
+      evaluar(t) {
+        if (!estilo.activo()) return OMITIDA;
+        if (t.respuesta == null) return null;
+        const muletilla = estilo.muletillaDeBot(t.respuesta);
+        return muletilla
+          ? `dice "${muletilla}": habla de sí mismo como sistema en vez de atender`
+          : null;
+      },
+    },
+
+    {
+      id: 'respeta_tope_emojis',
+      titulo: 'No se pasa de emojis',
+      // Un emoji cierra bien un mensaje; cuatro son un bot esforzándose por caer
+      // simpático, que es exactamente el efecto contrario. El tope lo declara el
+      // cliente (`estilo.max_emojis`), y 0 es legítimo: hay rubros donde un
+      // emoji en la respuesta equivocada es una falta de respeto.
+      evaluar(t) {
+        if (!estilo.activo()) return OMITIDA;
+        if (t.respuesta == null) return null;
+        const tope = estilo.maxEmojis();
+        const n = estilo.emojis(t.respuesta);
+        return n > tope
+          ? `usa ${n} emojis y el tope declarado es ${tope}`
           : null;
       },
     },

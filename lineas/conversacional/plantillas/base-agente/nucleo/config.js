@@ -81,6 +81,29 @@ const ESQUEMA = {
   'identidad.no_hacer':  { tipo: 'lista', env: null, def: [],
                            nota: 'límites explícitos que se inyectan al prompt' },
 
+  // ── Cómo escribe, que no es lo mismo que qué dice ───────────────────────────
+  // `identidad.tono` es del cliente ("cercano", "formal"): cambia la VOZ.
+  // Esto es de la fábrica: cambia la FORMA, y es lo que hace que un agente se
+  // sienta una persona escribiendo o un informe llegando por WhatsApp. Vivía en
+  // el bloque FORMATO del prompt de la semilla, que se reescribe entero en cada
+  // cliente — o sea que se perdía justo cuando empezaba a importar. Ver el
+  // encabezado de agent/estilo.js.
+  'estilo.activo':         { tipo: 'booleano', env: 'ESTILO_ACTIVO', def: true,
+                           nota: 'palanca de emergencia: false vuelve al comportamiento de la 1.6.0' },
+  // OJO, no confundir con `limites.max_tokens_respuesta` (600 TOKENS, que es
+  // costo). Esto son CARACTERES y es estilo: 600 tokens dan para ~2.400
+  // caracteres, así que el tope que se siente en el chat es este.
+  'estilo.max_caracteres': { tipo: 'numero', env: null, def: 600,
+                           nota: 'tope de la respuesta completa; también es el que verifica el arnés' },
+  // Una respuesta con una línea en blanco al medio sale como dos mensajes
+  // seguidos, que es como escribe una persona. 1 lo apaga (un solo mensaje).
+  'estilo.max_burbujas':   { tipo: 'numero', env: null, def: 3,
+                           nota: 'en cuántos mensajes seguidos se puede partir una respuesta; 1 = no partir' },
+  'estilo.max_emojis':     { tipo: 'numero', env: null, def: 1,
+                           nota: 'por mensaje; 0 = ninguno (rubros serios)' },
+  'estilo.una_pregunta':   { tipo: 'booleano', env: null, def: true,
+                           nota: 'una sola pregunta por mensaje: dos juntas se leen como formulario' },
+
   'canales.telegram.activo':    { tipo: 'booleano', env: null, def: false },
   // El NOMBRE de la variable, no el token. Resuelve la divergencia
   // TELEGRAM_TOKEN_CITAS vs TELEGRAM_TOKEN_INMOBILIARIA sin obligar a renombrar
@@ -231,7 +254,7 @@ const ESQUEMA = {
 // entera no se aplica y todo sigue andando con los defaults. Ese es exactamente
 // el modo de falla silencioso que este archivo vino a matar.
 const RAICES = new Set([
-  'cliente', 'identidad', 'canales', 'handoff', 'limites', 'datos', 'conocimiento',
+  'cliente', 'identidad', 'estilo', 'canales', 'handoff', 'limites', 'datos', 'conocimiento',
   'flujo', 'lead', 'metricas',
 ]);
 

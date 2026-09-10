@@ -1,6 +1,6 @@
 # Pipeline de la Fábrica
 
-Flujo completo de un pedido, de la frase del cliente al producto entregado. Cada fase tiene responsable y definición de "terminado" (DoD). El orquestador (sesión principal) despacha; los subagentes ejecutan.
+Flujo completo de un pedido, de la frase del cliente al producto entregado — y, cuando tiene tráfico, al bucle que lo mejora (fase 9). Cada fase tiene responsable y definición de "terminado" (DoD). El orquestador (sesión principal) despacha; los subagentes ejecutan.
 
 **Dónde vive el proyecto.** Los proyectos NO viven dentro de este repo. Cada uno nace en una carpeta externa por cliente (ver `CLAUDE.md` → "Dónde viven los proyectos"). En este documento `<RUTA_PROYECTO>` es la ruta absoluta de la carpeta del proyecto (ej. `C:\Users\Adela\clientes\taller-lucas\orden-trabajo\`). El orquestador la crea con `nuevo-proyecto.ps1` y **se la pasa a cada subagente**; ningún subagente la asume ni usa el directorio actual.
 
@@ -42,15 +42,17 @@ Entrada: la frase de José con el pedido (`/fabrica "..."`) y la línea ya clasi
 
 1. Crear la carpeta del proyecto con `nuevo-proyecto.ps1` (crea la carpeta externa, `git init`, `.gitignore` antes del primer add). Obtener `<RUTA_PROYECTO>`.
 2. Escribir `<RUTA_PROYECTO>\BRIEF.md` con la plantilla de `clientes/_plantilla/BRIEF.md`: qué pidió, línea, ficha de catálogo más cercana (o a-medida), canal, datos que maneja, presupuesto conocido, y el bloque de intake propio de la línea (ver el `LINEA.md` correspondiente).
-3. Registrar el pedido en Notion (base "Pedidos") con estado `Intake` y el campo **Ruta** = `<RUTA_PROYECTO>`.
+3. **Pedir el material que el cliente YA tiene** (línea conversacional). Es la fase más barata y la que más sube la calidad del agente: un export del WhatsApp del negocio (200 conversaciones alcanzan), su lista de precios, sus horarios, sus preguntas frecuentes. Va a `<RUTA_PROYECTO>\conversaciones-reales\` (que el `.gitignore` del proyecto excluye: son datos de personas reales). Un agente escrito desde un pedido imaginado habla como el pedido; uno escrito leyendo el chat real del negocio habla como ese negocio — ver `docs/CALIDAD-CONVERSACIONAL.md`, palanca P6.
+   **Si el cliente no lo tiene o no lo entrega, el pedido sigue igual**: se anota en el BRIEF que el SPEC va a ser inventado y no observado. Lo que no se puede es no pedirlo.
+4. Registrar el pedido en Notion (base "Pedidos") con estado `Intake` y el campo **Ruta** = `<RUTA_PROYECTO>`.
 
-**DoD**: carpeta externa creada con git propio, brief escrito, pedido en Notion con su ruta, línea y ficha (o a-medida) identificadas.
+**DoD**: carpeta externa creada con git propio, brief escrito, pedido en Notion con su ruta, línea y ficha (o a-medida) identificadas, y el material real pedido (entregado o su ausencia anotada).
 
 ## Fase 2 — Spec (analista)
 
 Convertir el brief en spec ejecutable. Si el pedido es difuso, usar `/spec` de gstack como guía de estructura. El orquestador le pasa al analista `<RUTA_PROYECTO>` y la ficha de la línea.
 
-- **Conversacional**: casos de uso (¿qué conversaciones resuelve el bot?), tools, tablas + datos semilla, fuera de alcance v1.
+- **Conversacional**: casos de uso (¿qué conversaciones resuelve el bot?), tools, tablas + datos semilla, fuera de alcance v1, y **`lead.campos`**: qué datos hay que juntar de la persona y con qué parámetro los reciben las tools (sin eso el agente vuelve a preguntar lo que ya le dijeron). Si hay `conversaciones-reales/`, son la fuente principal: de ahí salen los temas de `conocimiento/`, el tono y los adversariales.
 - **Automatización**: el objeto y sus estados, quién marca cada avance, a quién se avisa en cada cambio, qué pasa si se atrasa, qué ve el dueño en el panel. Piezas extra (reloj/oreja) explícitas.
 
 **DoD**: `<RUTA_PROYECTO>\SPEC.md` con casos de uso numerados y verificables.
@@ -59,7 +61,7 @@ Convertir el brief en spec ejecutable. Si el pedido es difuso, usar `/spec` de g
 
 Decisiones registradas en `docs/DECISIONES.md`:
 
-- **Conversacional — base a clonar**: `agente-citas` (reservar/agendar) o `agente-retail` (catálogo/pedidos). Desde cero solo si ninguna calza — justificarlo.
+- **Conversacional — base**: siempre el núcleo (`lineas/conversacional/plantillas/base-agente/`), que `nuevo-proyecto.ps1` instancia. Lo que se decide acá es la **ficha de catálogo** que guía el producto (agendamiento, retail, atención) y qué capacidades del núcleo se encienden: `lead.campos` (siempre), `conocimiento/` (casi siempre), `flujo.agentes` (**no**, se decide después con el panel — ver fase 9).
 - **Automatización — base**: `lineas/automatizacion/plantillas/base-proceso/` (cuando exista). Stack en `docs/ARQUITECTURA.md`.
 - **Canal**: Telegram para demo/validación (gratis, sin aprobación de Meta); WhatsApp Cloud API para producción.
 - **LLM runtime**: según tabla de `docs/ARQUITECTURA.md` y presupuesto del cliente. Por defecto: proveedor barato OpenAI-compatible, nunca Anthropic por defecto.
@@ -71,10 +73,10 @@ Decisiones registradas en `docs/DECISIONES.md`:
 
 **Conversacional** (detalle en `lineas/conversacional/plantillas/base-agente/README.md`):
 
-1. Clonar la base: copiar `chaski-agentes/agente-*` → `<RUTA_PROYECTO>\agente\` (sin `node_modules`, sin `.env`).
-2. Reemplazar `agent/llm.js` por `lineas/conversacional/plantillas/base-agente/llm.js` y actualizar `.env.example` con las variables `LLM_*`.
-3. Personalizar: `agent/prompts.js` (personalidad, negocio, horarios), `agent/tools.js` (acciones del vertical), `database/schema.sql` + datos semilla, textos de `telegram/bot.js` y `whatsapp/*` si aplica.
-4. `npm install` y verificar que `npm run telegram:mock` corre.
+1. El proyecto ya nació con `nuevo-proyecto.ps1` y trae **núcleo + semilla**. No se clona nada más, y **el núcleo no se edita dentro del proyecto**: un bug del núcleo se arregla en la fábrica y se re-sincroniza con `scripts/sincronizar-nucleo.ps1`.
+2. Llenar `agente.config.json` (identidad, canales, `datos.prefijo`, `lead.campos`, hitos) y correr `npm run validar`. El proveedor de LLM y las credenciales van al `.env` (`LLM_*`), nunca a la config.
+3. Personalizar el producto: `agent/prompts.js` (alcance y reglas del rubro), `agent/tools.js` (validación de negocio dentro de la tool), `database/schema.sql` + el bloque de dominio, y `conocimiento/`. **Las reglas de forma no van en el prompt**: las anexa el núcleo (`agent/estilo.js`) y se ajustan en `estilo.*`.
+4. `npm install`, `npm test` y `npm run chat`. Antes de entregar, `npm run entrega`.
 
 **Automatización**: se construye desde `base-proceso` (cuando exista), con el emisor de avisos detrás del cortafuegos (ver `docs/ARQUITECTURA.md`).
 
@@ -82,7 +84,7 @@ Decisiones registradas en `docs/DECISIONES.md`:
 
 ## Fase 5 — QA (qa)
 
-- **Conversacional**: adaptar/extender `scripts/test-chat.js` con escenarios del SPEC (mínimo: 1 por caso de uso + 2 adversariales: cliente confundido, pedido imposible). `npm test` y `npm run telegram:mock`.
+- **Conversacional**: escribir `evals/escenarios.js` con el **camino feliz** de cada CU del SPEC (el motor lo vuelve a correr con los 8 perfiles de cliente difícil) + mínimo 2 adversariales del rubro. Los **13 invariantes** del núcleo corren solos en cada turno; 5 son el contrato de forma (sin Markdown, una pregunta por mensaje, no re-saludar, no hablar como máquina, tope de emojis) y **no se apagan para llegar a verde**: si se ponen rojos, lo que hay que arreglar es el prompt. Si hay `conversaciones-reales/`, los escenarios se copian de ahí en vez de inventarse. `npm test`.
 - **Automatización**: correr la suite del proceso verificando que el **emisor simuló** y que hubo **cero llamadas externas** (ni WhatsApp real, ni mensajes al cliente final). El target de QA lo define `base-proceso`.
 - **Regla dura de toda la fábrica**: QA siempre primero con **cero efectos externos** (ni tokens de LLM, ni mensajes reales). Una pasada real (LLM o envío) solo con proveedor/modo aprobado explícitamente por José.
 - Bugs → `/investigate` de gstack para la causa raíz, no parches de síntoma.
@@ -112,3 +114,18 @@ En `<RUTA_PROYECTO>\entrega\`:
 José prueba el producto y da feedback. Cada iteración de feedback vuelve a la fase que corresponda (spec, build o QA) — no se parcha sin actualizar SPEC.md.
 
 **DoD**: José dice "aprobado" → estado `Entregado` en Notion. Recién ahí se habla de deploy a producción (Railway + credenciales del cliente, con costos aprobados por José).
+
+## Fase 9 — Operación y mejora continua (José, con la fábrica de apoyo)
+
+**Esta fase solo existe cuando el agente tiene tráfico real.** Es el bucle que separa un agente que se entregó de un agente que sirve, y es lo que la fábrica no tenía: hasta la fase 8 todo lo que sabemos del producto sale de escenarios que escribimos nosotros.
+
+Cada dos semanas, mientras el agente esté en marcha blanca:
+
+1. **`npm run metricas`** en la carpeta del proyecto. Las tres preguntas que hay que contestar están en `docs/CALIDAD-CONVERSACIONAL.md` §8: en qué parte de la conversación se detiene la gente, cuántas conversaciones quedaron a medias y cuántas entradas no soportadas (audios) murieron en silencio.
+2. **Leer 10 conversaciones reales completas.** El panel dice *dónde* falla; solo el texto dice *por qué*. Es la misma lectura de la fase 1, ahora con el agente adentro.
+3. **Convertir cada hallazgo en un escenario** de `evals/escenarios.js` antes de arreglarlo. Un arreglo sin escenario vuelve.
+4. **Anotar en la `BITACORA.md` del proyecto** con su nivel de semáforo. Un cambio de comportamiento es 🟡; cambiar algo que José ya aprobó en el SPEC es 🔴.
+
+Lo que se decide **acá y no antes**: si conviene partir el agente en varios (`flujo.agentes`), qué hitos de negocio importan de verdad, y si el seguimiento proactivo (paso 8 de `CALIDAD-CONVERSACIONAL.md`) vale lo que cuesta.
+
+**DoD**: no tiene — es un bucle. Se corta cuando el cliente deja de ser marcha blanca y pasa a mantención.

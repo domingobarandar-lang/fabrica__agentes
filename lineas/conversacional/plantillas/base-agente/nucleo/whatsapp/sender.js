@@ -2,7 +2,7 @@
 // Sin WHATSAPP_TOKEN funciona en modo demo: imprime por consola.
 
 const axios = require('axios');
-const { dividirMensaje } = require('../lib/texto');
+const { prepararEnvio } = require('../agent/estilo');
 const config = require('../config');
 
 const API_VERSION = 'v19.0';
@@ -48,10 +48,13 @@ async function sendMessage(telefono, texto) {
   if (texto == null) return;
 
   if (modoDemo()) {
-    console.log(`\n[Demo → ${telefono}]\n${texto}\n`);
+    // Se imprime lo que SALDRÍA, no lo que devolvió el agente: si la demo
+    // muestra un muro de texto que en producción habrían sido tres mensajes,
+    // la demo miente sobre el producto.
+    for (const parte of prepararEnvio(texto)) console.log(`\n[Demo → ${telefono}]\n${parte}\n`);
     return;
   }
-  const partes = dividirMensaje(texto);
+  const partes = prepararEnvio(texto);
   for (const parte of partes) {
     await clienteWhatsApp().post('', {
       messaging_product: 'whatsapp',
@@ -77,8 +80,11 @@ async function markAsRead(messageId) {
   }
 }
 
-// dividirMensaje vive en lib/texto.js: lo comparten este archivo y
-// telegram/enviar.js. Tenerlo dos veces fue el origen de que el mismo bug
-// existiera en dos canales a la vez.
+// prepararEnvio vive en agent/estilo.js (y usa dividirMensaje de lib/texto.js):
+// lo comparten este archivo y telegram/enviar.js. Tenerlo dos veces fue el
+// origen de que el mismo bug existiera en dos canales a la vez — y es también
+// por lo que el contrato de forma se hace cumplir acá y no en core.js: acá pasa
+// todo lo que ve una persona, y NO pasa el arnés de evals, que tiene que seguir
+// viendo el texto crudo para poder ponerse rojo.
 
 module.exports = { sendMessage, markAsRead };

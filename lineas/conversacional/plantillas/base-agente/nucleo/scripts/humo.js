@@ -1248,6 +1248,144 @@ async function main() {
   check(avisos13.some((a) => a.includes('entrega/DEMO.md')) && avisos13.some((a) => a.includes('tope_turnos_dia')),
     'y avisa (sin bloquear) del kit de entrega que falta y del techo de plan sin declarar');
 
+
+  // ── 14. El contrato de forma: cómo escribe el agente ────────────────────────
+  // POR QUÉ ESTÁ ACÁ Y NO EN LA SUITE DEL CLIENTE: esto es lo que hace que un
+  // agente se sienta una persona escribiendo en vez de un informe llegando por
+  // WhatsApp, y hasta la 1.6.0 vivía en el bloque FORMATO del prompt de la
+  // semilla — o sea, en el archivo que cada cliente REESCRIBE ENTERO. Se perdía
+  // en silencio justo cuando empezaba a importar.
+  console.log('\n14. Cómo escribe el agente: el contrato de forma viaja en el núcleo');
+
+  escribirConfig({});                       // volver a la config de la semilla
+  const estiloMod = cargar('agent', 'estilo.js');
+
+  const turnoDe = (extra) => ({
+    respuesta: null, mensajesUsuario: [], toolLog: [], toolLogAcumulado: [],
+    toolNames: [], llamadasModelo: 0, systemPrompt: '', indiceTurno: 0,
+    respuestasPrevias: [], ...extra,
+  });
+  const dictamen = (id, extra, cfg = {}) =>
+    reglasMod.construirReglas(cfg).find((r) => r.id === id).evaluar(turnoDe(extra));
+  const atrapa = (id, extra, cfg) => typeof dictamen(id, extra, cfg) === 'string';
+
+  // ── 14.a  El contrato llega al modelo aunque el cliente reescriba su prompt ──
+  // LA VERIFICACIÓN QUE JUSTIFICA EL MÓDULO: se simula el prompt de un cliente
+  // personalizado (una línea, sin ninguna regla de forma) y el contrato tiene
+  // que estar igual.
+  const promptDeCliente = 'Eres Ana, de la clínica. Agendas horas.';
+  const conEstilo = estiloMod.anexar(promptDeCliente);
+  check(/CÓMO ESCRIBES/.test(conEstilo) && /Sin Markdown/.test(conEstilo),
+    'un prompt de cliente sin una sola regla de forma igual sale con el contrato: ' +
+    'no depende de que alguien se acuerde de copiarlo');
+  check(!/Markdown/i.test(buildSystemPrompt()),
+    'y la semilla ya no lo lleva duplicado en prompts.js: una sola fuente, la del núcleo');
+
+  const clienteEstilo = crearClienteFalso([texto('Listo 😊')]);
+  _setClienteParaTests(clienteEstilo);
+  await processMessage('humo-estilo-1', 'hola');
+  check(/CÓMO ESCRIBES/.test(clienteEstilo.llamadas[0].system),
+    'y le llega al modelo de verdad, no solo a una función que nadie llama');
+
+  escribirConfig({ estilo: { activo: false } });
+  check(estiloMod.anexar(promptDeCliente) === promptDeCliente,
+    'con estilo.activo=false el prompt no cambia ni un byte: la palanca vuelve a la 1.6.0 entera');
+  escribirConfig({});
+
+  // ── 14.b  Se limpia en el ENVÍO, nunca en core.js ──
+  // Es la propiedad que mantiene honesto al arnés: si la limpieza corriera
+  // dentro de processMessage, los invariantes verían la respuesta ya limpia y un
+  // prompt que pide informes pasaría verde para siempre.
+  const sucio = 'Tenemos **tres** horas:\n\n- lunes\n- martes\n- miércoles\n\n¿Cuál te sirve?';
+  const clienteSucio = crearClienteFalso([texto(sucio)]);
+  _setClienteParaTests(clienteSucio);
+  const crudo = await processMessage('humo-estilo-2', 'horas?');
+  check(crudo === sucio,
+    'processMessage devuelve el texto CRUDO: el arnés tiene que poder ponerse rojo');
+  check(!/prepararEnvio|estilo\.aplicar/.test(fs.readFileSync(path.join(DIR_PRUEBA, 'agent', 'core.js'), 'utf8')),
+    'y core.js no limpia nada: mover la limpieza acá taparía el defecto en vez de denunciarlo');
+
+  const salida = estiloMod.prepararEnvio(sucio);
+  check(!salida.some((m) => m.includes('**')),
+    'en el envío sí se limpia: los asteriscos de Markdown se ven literales en WhatsApp');
+  check(salida.some((m) => m.includes('•')),
+    'y las viñetas quedan legibles en vez de un guión suelto por línea');
+
+  const botEstilo = crearBotFalso();
+  await cargar('telegram', 'enviar.js').enviarTelegram(botEstilo, 42, sucio);
+  check(botEstilo.enviados.length === 3 && !botEstilo.enviados.some((e) => e.texto.includes('**')),
+    'los dos canales pasan por el mismo punto: Telegram envía 3 mensajes cortos y ninguno con Markdown');
+  check((await cargar('telegram', 'enviar.js').enviarTelegram(botEstilo, 42, null), botEstilo.enviados.length === 3),
+    'y el guarda del silencio sigue siendo el primero: null no envía nada');
+
+  // ── 14.c  Burbujas: una respuesta con aire son varios mensajes seguidos ──
+  check(estiloMod.burbujas('uno\n\ndos\n\ntres').length === 3,
+    'una línea en blanco separa mensajes: es como escribe una persona, no un párrafo de cuatro renglones');
+  check(estiloMod.burbujas('uno\n\ndos\n\ntres\n\ncuatro\n\ncinco').length === 3,
+    'pero nunca más de estilo.max_burbujas: cinco mensajes seguidos son peores que un párrafo');
+  check(estiloMod.burbujas('uno\n\ndos\n\ntres\n\ncuatro').slice(-1)[0].includes('cuatro'),
+    'y el excedente se pega al último, porque ahí es donde suele ir la pregunta');
+  escribirConfig({ estilo: { max_burbujas: 1 } });
+  check(estiloMod.burbujas('uno\n\ndos').length === 1,
+    'max_burbujas=1 lo apaga: un solo mensaje, como antes de la 1.7.0');
+  escribirConfig({});
+  check(estiloMod.prepararEnvio(`${'x'.repeat(5000)}\n\nlisto`).every((m) => m.length <= 4096),
+    'el tope de 4096 del canal sigue mandando por encima de las burbujas');
+
+  // ── 14.d  Los cinco invariantes nuevos ──
+  check(atrapa('sin_markdown_en_el_chat', { respuesta: 'Tenemos **tres** horas' }),
+    'atrapa las negritas de Markdown, que en WhatsApp se leen como asteriscos');
+  check(!atrapa('sin_markdown_en_el_chat', { respuesta: 'Te queda el lunes 10-12 o el martes' }),
+    'y no confunde un rango de horas con una viñeta');
+  check(!atrapa('sin_markdown_en_el_chat', { respuesta: 'Puede ser:\n- lunes\n- martes' }),
+    'dos guiones los escribe una persona: eso no es un informe');
+  check(atrapa('sin_markdown_en_el_chat', { respuesta: 'Puede ser:\n- lunes\n- martes\n- miércoles' }),
+    'tres ya sí: es el punto donde una respuesta se convierte en folleto');
+
+  check(atrapa('una_pregunta_por_mensaje', { respuesta: '¿Qué día te sirve? ¿Y a qué hora?' }),
+    'atrapa las dos preguntas en el mismo mensaje: la gente contesta una y la otra se pierde');
+  check(!atrapa('una_pregunta_por_mensaje', { respuesta: 'Mira acá https://x.cl/a?b=1 ¿te sirve?' }),
+    'y no cuenta el "?" de una URL como una pregunta');
+
+  const yaHablaron = { indiceTurno: 3, respuestasPrevias: ['Listo', 'Ahí va'] };
+  check(atrapa('no_vuelve_a_saludar',
+    { ...yaHablaron, respuesta: '¡Hola! ¿En qué te ayudo?', mensajesUsuario: ['el jueves'] }),
+    'atrapa el "¡Hola!" en el turno cuatro: nadie saluda dos veces en la misma conversación');
+  check(!atrapa('no_vuelve_a_saludar',
+    { ...yaHablaron, respuesta: '¡Hola! ¿En qué te ayudo?', mensajesUsuario: ['Hola, buenas'] }),
+    'pero devolverle el saludo a quien saluda es lo que hace cualquiera ' +
+    '(el falso positivo que encontró la propia suite de la semilla)');
+  check(dictamen('no_vuelve_a_saludar', { respuesta: '¡Hola!' }) === reglasMod.OMITIDA,
+    'y en el primer turno la regla se OMITE, que no es lo mismo que aprobarla');
+
+  check(atrapa('no_habla_como_maquina', { respuesta: 'Según mi base de datos, atendemos el lunes' }),
+    'atrapa "según mi base de datos": el cliente escribió esperando que le contesten, no un sistema');
+  check(atrapa('no_habla_como_maquina', { respuesta: 'No estoy programado para eso' }),
+    'y "no estoy programado para", que además suena a excusa');
+
+  check(atrapa('respeta_tope_emojis', { respuesta: 'Listo 😊🎉🙌' }),
+    'atrapa los tres emojis contra el tope de uno: un bot esforzándose por caer simpático');
+  check(!atrapa('respeta_tope_emojis', { respuesta: 'Listo 😊' }),
+    'y deja pasar el que cierra bien el mensaje');
+
+  // ── 14.e  El tope de largo es UNO, y sale de la config ──
+  escribirConfig({ estilo: { max_caracteres: 120 } });
+  check(atrapa('respuesta_breve', { respuesta: 'x'.repeat(150) }),
+    'el tope de largo lo manda estilo.max_caracteres: el prompt y el arnés usan el mismo número');
+  check(!atrapa('respuesta_breve', { respuesta: 'x'.repeat(150) }, { maxChars: 600 }),
+    'y la suite del cliente todavía puede pisarlo, que es la precedencia de siempre');
+  escribirConfig({});
+
+  // ── 14.f  Apagado, las cinco se OMITEN (y omitir no es aprobar) ──
+  escribirConfig({ estilo: { activo: false } });
+  const CINCO = ['sin_markdown_en_el_chat', 'una_pregunta_por_mensaje', 'no_vuelve_a_saludar',
+                 'no_habla_como_maquina', 'respeta_tope_emojis'];
+  check(CINCO.every((id) => dictamen(id, { ...yaHablaron, respuesta: '¡Hola! **hey** 😊🎉 ¿a? ¿b?' }) === reglasMod.OMITIDA),
+    'con el contrato apagado las cinco se declaran OMITIDAS, nunca verdes');
+  check(estiloMod.prepararEnvio(sucio).length === 1,
+    'y el envío vuelve a ser el de la 1.6.0: un solo mensaje, sin limpiar');
+  escribirConfig({});
+
   // ── Resultado ───────────────────────────────────────────────────────────────
   resetDemo();
   fs.rmSync(DIR_PRUEBA, { recursive: true, force: true });
