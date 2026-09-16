@@ -380,10 +380,12 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
    ```
    LLM_PROVIDER=gemini          # anthropic | groq | deepseek | gemini | openrouter | ollama | openai-compat
    LLM_API_KEY=
-   LLM_MODEL=gemini-2.0-flash
+   LLM_MODEL=gemini-3.5-flash   # confirma que siga publicado: los nombres caducan
    # LLM_BASE_URL=              # solo para openai-compat
    ```
    **Nunca asumir Anthropic por defecto**: es regla dura de `CLAUDE.md`, y ya nos mordió una vez (un agente quedó con `ANTHROPIC_*` en su `.env.example` y sin las `LLM_*`).
+
+   **Y el nombre del modelo caduca.** Este README decía `gemini-2.0-flash`, y el 2026-09-16 ese modelo ya no existía: la API responde 404 y el agente no arranca. Antes de desplegar, `curl "https://generativelanguage.googleapis.com/v1beta/models?key=…"` y confirmar que el que se va a usar sigue publicado.
 2b. **Llenar `agente.config.json`** — nombre, identidad, canales, prefijo de tablas. Es lo primero que hay que dejar bien: de ahí salen el prompt, el `railway.toml` y los nombres de las tablas. `npm run validar` antes de seguir.
 3. **Escribir el producto** — acá va el tiempo:
    - `agent/prompts.js` — alcance y reglas del rubro (la identidad ya viene de la config).
@@ -424,3 +426,5 @@ Por qué es un script y no un paquete npm: GitHub Packages exigiría un PAT en c
 - Supabase: usar la key `service_role`; la `anon` da *permission denied* con RLS.
 - Sin Supabase la base es en memoria y cada redeploy la borra. Para demo sirve; para producción no.
 - La calidad del tool-calling varía entre proveedores: al cambiar `LLM_PROVIDER`, correr mock + una conversación real antes de dar por bueno el cambio.
+- **Lo que el proveedor cuelga de una tool call hay que devolvérselo.** Gemini 3.x manda una `thought_signature` dentro de `extra_content` y **exige** que viaje de vuelta en el mensaje del assistant; si no llega, responde 400 y el turno entero se pierde. Rompe justo los turnos con herramienta: la primera llamada pasa, la segunda —la que lleva el `tool_result`— falla, y al cliente le llega "estoy teniendo problemas técnicos". **No se ve en mock** (el doble no manda firmas) ni en una prueba de un solo turno. El adapter guarda ese bloque opaco en `_extra` y lo repone tal cual: si mañana otro proveedor cuelga otra cosa de ahí, viaja igual.
+- **Una conversación por tubería tiene que funcionar.** `npm run chat` encadenaba `rl.question`, y con `printf '…' | npm run chat` se perdía todo menos la primera línea: el pipe termina, readline emite `close` mientras el primer turno sigue en vuelo, y lo ya leído se descarta. Parecía que el bot dejaba de contestar. Ahora la entrada es una cola y `close` espera a vaciarla — que es lo que permite guionizar una demo o dejar una conversación de humo contra el proveedor real.

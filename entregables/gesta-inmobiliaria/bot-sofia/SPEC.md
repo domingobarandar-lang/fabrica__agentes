@@ -56,8 +56,9 @@ El menú no ofrece "Requisitos" y usa ese tercer espacio para "Con una ejecutiva
 **Listo cuando**: son 3 botones y ninguno es de requisitos.
 
 ### CU-6 — Captación en la Región Metropolitana
-Pregunta primero si está en la RM (botones Sí/No), después pide los datos con ejemplos
-concretos, registra y deriva.
+Pregunta primero si está en la RM **con botones Sí/No** (tool `preguntar_region`; hacerla
+en texto invita a "sipo" y "queda en maipu", y es la pregunta que decide si Gesta puede
+tomar la propiedad). Después pide los datos con ejemplos concretos, registra y deriva.
 **Listo cuando**: queda 1 captación con `region_metropolitana = true` y el detalle que
 contó la persona, y el canal queda en modo humano.
 
@@ -80,8 +81,9 @@ Ofrece las tres puertas: Arrendar · Comprar · Vender/arrendar.
 
 ## Fuera de alcance (v1)
 
-- Buscar propiedades por presupuesto o por filtros combinados. Hoy Sofía resuelve la
-  propiedad del aviso; una búsqueda abierta pasa a una ejecutiva.
+- Buscar por **presupuesto** o por filtros combinados. Sofía resuelve la propiedad del
+  aviso y, si le nombran una comuna o una calle, ofrece hasta **3** publicadas como
+  botones; cualquier cosa más fina que eso pasa a una ejecutiva.
 - Confirmar visitas contra una agenda real (no hay calendario conectado).
 - Responder comisiones, financiamiento, subsidios o tasaciones.
 - Fotos dentro del chat: se manda el link de la publicación, que es lo que hay.

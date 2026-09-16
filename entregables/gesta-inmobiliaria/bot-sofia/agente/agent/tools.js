@@ -110,6 +110,12 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'preguntar_region',
+    description:
+      'Pone los botones Sí / No para preguntarle a un propietario si su propiedad está en la Región Metropolitana. Úsala apenas alguien diga que quiere vender o arrendar SU propiedad con Gesta: es la primera pregunta, antes de pedirle ningún dato.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'menu_bienvenida',
     description:
       'Muestra las tres opciones de entrada (arrendar, comprar, o vender/arrendar su propiedad con Gesta). Úsala cuando alguien saluda sin decir qué busca ni mencionar una propiedad.',
@@ -126,6 +132,7 @@ async function ejecutarHerramienta(nombre, input, canalId) {
     case 'agendar_visita':      return agendarVisita(args, canalId);
     case 'registrar_captacion': return registrarCaptacion(args, canalId);
     case 'hablar_con_ejecutiva':return hablarConEjecutiva(args, canalId);
+    case 'preguntar_region':    return preguntarRegion(args, canalId);
     case 'menu_bienvenida':     return menuBienvenida(args, canalId);
     default:
       return { error: `Herramienta desconocida: ${nombre}` };
@@ -152,7 +159,7 @@ async function buscarPropiedad({ texto, comuna, operacion, tipo }, canalId) {
   if (candidatas.length) {
     const menu = botones.proponer(
       canalId,
-      candidatas.map((p) => ({ id: `prop:${p.id}`, titulo: p.direccion || p.comuna || p.tipo })),
+      candidatas.map((p) => ({ id: `prop:${p.id}`, titulo: formato.tituloBoton(p) })),
     );
     return {
       encontrada: false,
@@ -371,6 +378,23 @@ async function hablarConEjecutiva({ motivo, propiedad_id, nombre }, canalId) {
     derivado: true,
     instruccion:
       'Dile que una ejecutiva de Gesta le escribe a este mismo número, y despídete. Es tu último mensaje en esta conversación.',
+  };
+}
+
+// ─── Captación: la primera pregunta ──────────────────────────────────────────
+
+// Existe para PONER LOS BOTONES, y eso basta para justificarla. Sin ella el
+// modelo hace la misma pregunta en texto y funciona igual de bien… hasta que la
+// persona contesta "en la rm", "sipo", "creo que sí" o "queda en maipu", y hay
+// que gastar un turno en desambiguar lo que dos botones resuelven en cero. Es la
+// pregunta que decide si Gesta puede tomar la propiedad: conviene que la
+// respuesta sea un dato y no una interpretación.
+async function preguntarRegion(_args, canalId) {
+  const menu = botones.proponer(canalId, formato.menuSiNo());
+  return {
+    botones_puestos: menu.map((b) => b.titulo),
+    instruccion:
+      'Responde con cariño que sí pueden ayudarlo y pregúntale si su propiedad está en la Región Metropolitana. Los botones Sí y No YA están puestos: no los escribas.',
   };
 }
 

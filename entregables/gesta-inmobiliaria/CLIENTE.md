@@ -15,13 +15,15 @@ Corredora de propiedades. Región Metropolitana.
 | Socio de la fábrica | José | jose.baranda.r@csi.cl |
 | Ejecutiva que recibe los avisos | _por definir_ | WhatsApp _pendiente_ |
 
+**La key de Gemini no se anotó en el pool** (`secrets/`): no salió de ahí, la entregó José directo para este cliente. Vive únicamente en `entregables/gesta-inmobiliaria/bot-sofia/agente/.env`, que el `.gitignore` excluye. Al mover el proyecto a su carpeta definitiva, el `.env` se mueve con él y no se versiona.
+
 ## Credenciales asignadas
 
 **Solo nombres. Ningún valor vive en este archivo ni en este repo.**
 
 | Para qué | Variable | Estado |
 |---|---|---|
-| Modelo de lenguaje | `LLM_API_KEY` (Gemini) | ⏳ pendiente — revisar primero el pool de la fábrica (`secrets/pool.env`) |
+| Modelo de lenguaje | `LLM_API_KEY` (Gemini) | ✅ **asignada por José el 2026-09-16**. Vive solo en el `.env` del proyecto. Modelo: `gemini-3.5-flash` (probado conversando) |
 | WhatsApp Business | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID` | ⏳ pendiente |
 | Firma del webhook | `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | ⏳ pendiente |
 | Base de datos | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | ⏳ pendiente (sin esto todo queda en memoria) |

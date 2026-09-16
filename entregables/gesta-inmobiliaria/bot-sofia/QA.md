@@ -41,12 +41,33 @@ cambio de agente como si pasaran la conversación a un humano.
 | El perfil `pide_humano` daba rojo en todo camino que **termina** en una persona | Después de agendar, pedir una ejecutiva no produce mensaje: el bot ya se calló | El motor acepta el silencio cuando el canal ya está en modo humano (arreglo en el núcleo) |
 | Los botones podían **sobrevivir al turno** | Un turno que propone botones y deriva los dejaba pegados al mensaje siguiente | `core.js` los limpia al empezar cada turno |
 
+## Conversación real contra Gemini (2026-09-16)
+
+Siete conversaciones por consola con **`gemini-3.5-flash`**, que es lo único que el mock
+no puede probar. **Las siete pasaron**, y encontraron tres fallas que la suite en verde no
+podía ver:
+
+| Qué falló | Por qué el mock no lo veía | Arreglo |
+|---|---|---|
+| `gemini-2.0-flash` ya no existe | El mock no llama a ningún proveedor | Modelo actualizado en los 4 lugares donde estaba escrito |
+| Gemini 3.x exige que le devuelvan la `thought_signature` de cada tool call | El doble del LLM no manda firmas, y la primera llamada del turno sí funciona | El adapter la guarda opaca y la repone (arreglo en el núcleo) |
+| La pregunta de la Región Metropolitana salía sin botones Sí/No | Ninguna tool los proponía; el modelo la escribía a mano y "funcionaba" | Tool `preguntar_region`, verificada en CU-6 |
+| Un título de botón se recortaba: "Luis Thayer Ojeda 1…" | Los escenarios usaban direcciones cortas | `formato.tituloBoton`, verificado sobre **todas** las propiedades en ADV-3 |
+
+Lo que confirmaron con el modelo real: identifica la propiedad del aviso, manda la ficha
+literal, se niega a agendar con una sola fecha, se calla después de agendar, toma la
+captación, rechaza con cariño lo que está fuera de la Región Metropolitana **sin prometer
+que alguien llamará**, pregunta cuál cuando hay dos en la misma calle, dice que no tiene
+una propiedad que no está publicada **sin ofrecer una parecida**, y ante comisión y
+crédito hipotecario deriva en vez de inventar.
+
 ## Lo que estas pruebas NO miden
 
 El modelo es un doble guionizado: los perfiles prueban el **núcleo** y los invariantes
-frente a entradas desordenadas, no la comprensión del lenguaje de Gemini. Si Sofía va
-a entender *"oye y esa de holanda cuánto sale"* se confirma conversando
-(`npm run chat -- --real`), y hay que rehacerlo si se cambia de proveedor.
+frente a entradas desordenadas, no la comprensión del lenguaje de Gemini. Eso se confirma
+conversando (`npm run chat -- --real`, ver la sección de arriba), y **hay que rehacerlo si
+se cambia de proveedor o de modelo**: las tres fallas de arriba eran invisibles para una
+suite 96/96 en verde.
 
 Tampoco se probó contra la WhatsApp Cloud API real: el envío con botones está
 verificado en la prueba de humo del núcleo (payload, topes y guarda del silencio), pero

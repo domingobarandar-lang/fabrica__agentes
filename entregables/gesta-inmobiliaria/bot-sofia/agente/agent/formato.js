@@ -46,6 +46,30 @@ function titulo(p) {
   return lugar ? `${partes} - ${lugar}` : partes;
 }
 
+/**
+ * El nombre de una propiedad dentro de un botón: 20 caracteres, ni uno más.
+ *
+ * El núcleo recorta lo que se pase, pero recortar por la fuerza produce
+ * "Luis Thayer Ojeda 1…", que en un teléfono no dice nada. Acá se recorta con
+ * criterio: se sueltan las palabras de adelante, que son las genéricas
+ * ("Avenida", "Condominio", "Los"), y se conserva el final, que es lo que
+ * identifica — el nombre corto de la calle y su número.
+ */
+function tituloBoton(p) {
+  const base = String(p.direccion || p.comuna || p.tipo || '').trim();
+  if (base.length <= 20) return base;
+
+  const palabras = base.split(/\s+/);
+  let corto = palabras[palabras.length - 1];
+  for (let i = palabras.length - 2; i >= 0; i--) {
+    const intento = `${palabras[i]} ${corto}`;
+    if (intento.length > 20) break;
+    corto = intento;
+  }
+  // Una sola palabra de más de 20 caracteres: no queda otra que cortarla.
+  return corto.length <= 20 ? corto : corto.slice(0, 19) + '…';
+}
+
 /** Una línea corta para listar varias propiedades sin vomitar el catálogo. */
 function linea(p) {
   const precio = monto(p.precio);
@@ -122,8 +146,8 @@ const BTN = {
   arrendar:   ()   => ({ id: 'buscar:arriendo',  titulo: '🔑 Arrendar' }),
   comprar:    ()   => ({ id: 'buscar:venta',     titulo: '🏠 Comprar' }),
   captar:     ()   => ({ id: 'captacion',        titulo: '💰 Vender/arrendar' }),
-  si:         ()   => ({ id: 'rm:si',            titulo: '✅ Sí' }),
-  no:         ()   => ({ id: 'rm:no',            titulo: '❌ No' }),
+  si:         ()   => ({ id: 'rm_si',            titulo: '✅ Sí' }),
+  no:         ()   => ({ id: 'rm_no',            titulo: '❌ No' }),
 };
 
 /** El menú que se ofrece al reconocer la propiedad por la que preguntan. */
@@ -148,6 +172,6 @@ const menuBienvenida = () => [BTN.arrendar(), BTN.comprar(), BTN.captar()];
 const menuSiNo       = () => [BTN.si(), BTN.no()];
 
 module.exports = {
-  ficha, requisitos, tieneRequisitos, titulo, linea, monto, miles,
+  ficha, requisitos, tieneRequisitos, titulo, linea, monto, miles, tituloBoton,
   menuPropiedad, menuDespues, menuBienvenida, menuSiNo, BTN,
 };

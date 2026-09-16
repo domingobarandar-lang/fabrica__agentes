@@ -200,7 +200,20 @@ module.exports = [
     turnos: [
       {
         user: 'Hola, estoy interesado en vender o arrendar mi propiedad con ustedes. ¿Me podrías ayudar?',
-        modelo: [{ text: '¡Hola! Claro que sí 😊 Cuéntame: ¿tu propiedad está en la Región Metropolitana?' }],
+        modelo: [
+          { tools: [{ name: 'preguntar_region', input: {} }] },
+          { text: '¡Hola! Claro que sí 😊 Cuéntame: ¿tu propiedad está en la Región Metropolitana?' },
+        ],
+        // La primera pregunta de la captación decide si Gesta puede tomar la
+        // propiedad. Con botones la respuesta es un dato; escrita a mano llegan
+        // "sipo", "en la rm" y "queda en maipu", y hay que gastar un turno en
+        // interpretar lo que dos botones resuelven en cero.
+        despues(ctx, check) {
+          const puestos = ctx.lastResult('preguntar_region')?.botones_puestos || [];
+          check(puestos.length === 2, `la pregunta de la Región Metropolitana salió con ${puestos.length} botones y son 2`);
+          check(puestos.some((b) => /Sí/i.test(b)) && puestos.some((b) => /No/i.test(b)), 'faltan los botones Sí y No');
+          check(botones.ver(ctx.canalId).length === 2, 'los botones Sí/No no llegaron al canal');
+        },
       },
       {
         user: 'sí, está en Maipú',
@@ -240,7 +253,10 @@ module.exports = [
     turnos: [
       {
         user: 'Hola, quiero arrendar mi departamento con ustedes',
-        modelo: [{ text: '¡Hola! Con gusto 😊 ¿Tu propiedad está en la Región Metropolitana?' }],
+        modelo: [
+          { tools: [{ name: 'preguntar_region', input: {} }] },
+          { text: '¡Hola! Con gusto 😊 ¿Tu propiedad está en la Región Metropolitana?' },
+        ],
       },
       {
         user: 'no, está en Viña del Mar',
@@ -372,6 +388,14 @@ module.exports = [
       check((r?.candidatas || []).length === 2, 'no ofreció las dos candidatas');
       check(!/UF|\$/.test(ctx.respuestas[0]), 'soltó un precio antes de saber de cuál de las dos hablaban');
       check((r?.botones_puestos || []).length === 2, 'no puso un botón por candidata: obliga a escribir la dirección de nuevo');
+      // Un título recortado por la fuerza ("Luis Thayer Ojeda 1…") no identifica
+      // nada en un teléfono. Se comprueba sobre TODAS las publicadas, no solo
+      // sobre las dos de este escenario: la próxima dirección larga que cargue
+      // la corredora tiene que caber igual.
+      const largos = (await ctx.db.propiedades.activas())
+        .map((p) => formato.tituloBoton(p))
+        .filter((t) => t.length > 20 || t.endsWith('…'));
+      check(largos.length === 0, `hay títulos de botón que no caben en los 20 caracteres: ${largos.join(', ')}`);
     },
   },
 

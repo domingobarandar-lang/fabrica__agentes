@@ -10,7 +10,10 @@
 //
 //   LLM_PROVIDER   anthropic | groq | deepseek | gemini | openrouter | ollama | openai-compat
 //   LLM_API_KEY    key del proveedor (ollama no la necesita)
-//   LLM_MODEL      ej: llama-3.3-70b-versatile, deepseek-chat, gemini-2.0-flash
+//   LLM_MODEL      ej: llama-3.3-70b-versatile, deepseek-chat, gemini-3.5-flash
+//                  (los nombres CADUCAN: `gemini-2.0-flash` dejó de existir y la
+//                   API responde 404. Confirmar contra /v1beta/models antes de
+//                   desplegar.)
 //   LLM_BASE_URL   solo para "openai-compat" (proveedor no listado en PRESETS)
 //
 // Retrocompatible: si LLM_PROVIDER no está definido y existe ANTHROPIC_API_KEY,
@@ -40,11 +43,19 @@ function aMensajesOpenAI(system, messages) {
       const texto = m.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       const toolCalls = m.content
         .filter((b) => b.type === 'tool_use')
-        .map((b) => ({
-          id: b.id,
-          type: 'function',
-          function: { name: b.name, arguments: JSON.stringify(b.input || {}) },
-        }));
+        .map((b) => {
+          const tc = {
+            id: b.id,
+            type: 'function',
+            function: { name: b.name, arguments: JSON.stringify(b.input || {}) },
+          };
+          // Lo que el proveedor colgó de su propia tool call vuelve TAL CUAL.
+          // Ver la nota de `extra_content` más abajo: sin esto, Gemini 3.x
+          // rechaza con 400 la segunda llamada de cualquier turno con
+          // herramienta — o sea, todos los turnos que importan.
+          if (b._extra) tc.extra_content = b._extra;
+          return tc;
+        });
       const msg = { role: 'assistant', content: texto || null };
       if (toolCalls.length) msg.tool_calls = toolCalls;
       out.push(msg);
@@ -73,7 +84,25 @@ function aRespuestaAnthropic(data) {
   for (const tc of msg.tool_calls || []) {
     let input = {};
     try { input = JSON.parse(tc.function?.arguments || '{}'); } catch { /* args ilegibles -> {} */ }
-    content.push({ type: 'tool_use', id: tc.id, name: tc.function?.name, input });
+    const bloque = { type: 'tool_use', id: tc.id, name: tc.function?.name, input };
+    // ── extra_content: lo que el proveedor necesita que le devuelvan ──────────
+    //
+    // Gemini 3.x manda con cada tool call una `thought_signature` dentro de
+    // `extra_content.google`, y EXIGE que viaje de vuelta en el mensaje del
+    // assistant cuando se reanuda la conversación. Si no llega, responde 400:
+    //   "Function call is missing a thought_signature in functionCall parts".
+    //
+    // Eso rompe el turno entero, y rompe justo los que usan herramienta: la
+    // primera llamada funciona, la segunda —la que lleva el tool_result— falla,
+    // y el cliente recibe "estoy teniendo problemas técnicos". No se ve en mock
+    // (el doble del LLM no manda firmas) ni en una prueba de un solo turno.
+    //
+    // Se guarda opaco, con nombre propio (`_extra`) para no chocar con el
+    // formato Anthropic, y se devuelve tal cual. El núcleo no interpreta nada:
+    // el día que otro proveedor cuelgue otra cosa de ahí, viaja igual. El campo
+    // sobrevive porque core.js reenvía `respuesta.content` sin tocarlo.
+    if (tc.extra_content) bloque._extra = tc.extra_content;
+    content.push(bloque);
   }
   // El uso se NORMALIZA al vocabulario de Anthropic (input_tokens /
   // output_tokens), que es el que lee agent/core.js para las métricas. Sin esto

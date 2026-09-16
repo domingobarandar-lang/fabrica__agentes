@@ -48,22 +48,38 @@ console.log('─'.repeat(64) + '\n');
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-// La consola se puede cerrar mientras hay un turno en vuelo: Ctrl+D, o la
-// entrada por tubería que se acaba. Sin esta bandera, el turno terminaba y
-// volvía a preguntarle a un readline ya cerrado — al cliente le aparecía un
-// stack trace de Node justo al final de la demo.
-let cerrado = false;
-rl.on('close', () => { cerrado = true; });
+// LA ENTRADA SE LEE COMO UNA COLA, no con question() recursivo.
+//
+// Con `rl.question` encadenado, una conversación por tubería
+// (`printf '...\n...' | npm run chat`) perdía todo menos la primera línea: el
+// pipe termina, readline emite 'close' mientras el primer turno sigue en vuelo,
+// y las líneas ya leídas se descartan. Guionizar una demo o dejar una
+// conversación de humo contra el proveedor real era imposible, y el modo de
+// falla era silencioso — parecía que el bot había dejado de contestar.
+//
+// Con cola: 'line' encola, un solo bombeo procesa en orden, y 'close' espera a
+// que la cola se vacíe antes de salir. Interactivo se comporta igual que antes.
+const cola = [];
+let procesando = false;
+let entradaCerrada = false;
 
 // Los botones del último turno, para poder apretarlos escribiendo su número.
 let ultimosBotones = [];
 
-function preguntar() {
-  if (cerrado) return;
-  rl.question('Tú:  ', async (texto) => {
-    const limpio = texto.trim();
-    if (!limpio) return preguntar();
-    if (/^(salir|exit|chao)$/i.test(limpio)) { rl.close(); return; }
+rl.setPrompt('Tú:  ');
+rl.prompt();
+
+rl.on('line', (linea) => { cola.push(linea); bombear(); });
+rl.on('close', () => { entradaCerrada = true; bombear(); });
+
+async function bombear() {
+  if (procesando) return;
+  procesando = true;
+
+  while (cola.length) {
+    const limpio = cola.shift().trim();
+    if (!limpio) continue;
+    if (/^(salir|exit|chao)$/i.test(limpio)) { entradaCerrada = true; break; }
 
     // Apretar un botón se escribe como su número: [1], [2]… Sin esto, probar
     // una conversación con botones por consola sería imposible, y la consola es
@@ -89,8 +105,9 @@ function preguntar() {
     } catch (error) {
       console.log(`Bot: ${MENSAJE_ERROR}\n     (${error.message})\n`);
     }
-    preguntar();
-  });
-}
+  }
 
-preguntar();
+  procesando = false;
+  if (entradaCerrada) { rl.close(); process.exit(0); }
+  rl.prompt();
+}
