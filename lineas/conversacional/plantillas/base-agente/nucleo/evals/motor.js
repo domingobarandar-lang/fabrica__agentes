@@ -44,7 +44,7 @@ for (const def of Object.values(config.ESQUEMA)) {
 }
 
 const { processMessage, _setClienteParaTests } = require('../agent/core');
-const { MENSAJE_DERIVACION } = require('../agent/handoff');
+const { MENSAJE_DERIVACION, enModoHumano } = require('../agent/handoff');
 const buffer = require('../agent/buffer');
 const { TOOL_DEFINITIONS } = require('../agent/tools');
 const { buildSystemPrompt } = require('../agent/prompts');
@@ -402,7 +402,16 @@ function crearMotor(cfg = {}) {
         }
 
         if (turno.espera_derivacion) {
-          check(respuesta === MENSAJE_DERIVACION, 'pidió una persona y no recibió el mensaje de derivación');
+          // El silencio TAMBIÉN es una derivación correcta cuando el canal ya
+          // estaba en modo humano: el escenario terminó pasando la conversación
+          // por sí mismo (agendó, captó, pidió una ejecutiva) y pedir una persona
+          // encima no puede producir un mensaje nuevo — el bot ya no habla ahí.
+          // Exigir el texto de derivación en ese caso dejaba al perfil
+          // `pide_humano` fuera de todo agente cuyo camino feliz termina en una
+          // persona, que son casi todos los que valen la pena.
+          const yaAtendida = respuesta === null && (await enModoHumano(canalId));
+          check(yaAtendida || respuesta === MENSAJE_DERIVACION,
+            'pidió una persona y no recibió el mensaje de derivación');
           const despues = await processMessage(canalId, 'hola? sigues ahí?');
           check(despues === null, `tras derivar, el bot volvió a hablar: "${despues}"`);
         }

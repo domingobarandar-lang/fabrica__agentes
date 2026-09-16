@@ -1,5 +1,5 @@
 {
-  "version": "1.6.0",
+  "version": "1.7.0",
   "descripcion": "Mapa origen→destino del núcleo conversacional. Lo consumen sincronizar-nucleo.ps1 (para instalar en un proyecto) y nucleo/scripts/humo.js (para armar el overlay de prueba). Una sola fuente de verdad: si un archivo no está acá, no viaja.",
 
   "nucleo": [
@@ -15,6 +15,7 @@
     { "origen": "nucleo/agent/conocimiento.js", "destino": "agent/conocimiento.js", "nota": "índice al prompt, corpus en archivos; inyecta y resuelve la tool cargar_conocimiento" },
     { "origen": "nucleo/agent/flujo.js",       "destino": "agent/flujo.js",       "nota": "varios agentes especializados por config; APAGADO sin flujo.agentes. Inyecta y resuelve cambiar_etapa" },
     { "origen": "nucleo/agent/lead.js",        "destino": "agent/lead.js",        "nota": "lo que ya se sabe de la persona: bloque \"ya sabes / te falta\" desde los input de las tools" },
+    { "origen": "nucleo/agent/botones.js",     "destino": "agent/botones.js",     "nota": "botones de respuesta rápida: la tool los propone, el envío los consume. Duran UN turno" },
     { "origen": "nucleo/lib/texto.js",         "destino": "lib/texto.js",         "nota": "dividirMensaje compartido por todos los canales de envío" },
     { "origen": "nucleo/evals/motor.js",       "destino": "evals/motor.js",       "nota": "arnés de evaluación: mock del LLM, runner y reporte. Bloquea los efectos externos antes de cargar nada" },
     { "origen": "nucleo/evals/reglas.js",      "destino": "evals/reglas.js",      "nota": "invariantes deterministas que corren solos en cada turno" },
@@ -30,11 +31,11 @@
     { "origen": "nucleo/scripts/panel-metricas.js",   "destino": "scripts/panel-metricas.js",   "nota": "npm run metricas: lee la tabla de métricas y responde '¿esto está funcionando?' + escalera 50/75/90/100 contra el techo del plan" },
     { "origen": "nucleo/scripts/listo-para-entrega.js", "destino": "scripts/listo-para-entrega.js", "nota": "npm run entrega: compuerta previa a la fase 6. Detecta semilla sin reescribir, trabajo a medias, credenciales en el código y CU del SPEC sin escenario" },
     { "origen": "nucleo/nixpacks.toml",        "destino": "nixpacks.toml",        "nota": "build Railway" },
-    { "origen": "nucleo/.gitignore",           "destino": ".gitignore",           "nota": "mantiene .env fuera del repo del cliente" },
-    { "origen": "nucleo/.env.example",         "destino": ".env.example",         "nota": "SOLO secretos y conexiones; el comportamiento vive en agente.config.json" }
+    { "origen": "nucleo/.gitignore",           "destino": ".gitignore",           "nota": "mantiene .env fuera del repo del cliente" }
   ],
 
   "ejemplo": [
+    { "origen": "ejemplo/.env.example",         "destino": ".env.example",         "nota": "SOLO secretos y conexiones. Es SEMILLA, no núcleo: un cliente con una integración propia (una planilla, un CRM) declara ahí SUS variables, y sincronizar el núcleo no puede borrárselas" },
     { "origen": "ejemplo/agente.config.json",   "destino": "agente.config.json" },
     { "origen": "ejemplo/agent/prompts.js",     "destino": "agent/prompts.js" },
     { "origen": "ejemplo/agent/tools.js",       "destino": "agent/tools.js" },
@@ -53,6 +54,7 @@
   ],
 
   "nunca_tocar": [
+    ".env.example",
     "agent/prompts.js",
     "agent/tools.js",
     "database/schema.sql",
@@ -73,6 +75,8 @@
     "nunca_tocar": "sincronizar-nucleo.ps1 aborta si un destino de esta lista aparece como destino en 'nucleo'. Es una guarda contra pisar el producto del cliente. Implementada de verdad desde 2026-08-06: antes estaba solo escrita acá. Una entrada terminada en '/' protege la CARPETA entera: hace falta para conocimiento/, cuyos archivos los nombra el cliente y la fábrica no puede listar de antemano.",
     "conocimiento": "conocimiento/ es producto del cliente: el índice y los archivos de cada tema. Viaja SOLO en la capa 'ejemplo' (semilla) y está protegido por 'nunca_tocar'. El núcleo aporta agent/conocimiento.js, que arma el índice para el prompt e inyecta y resuelve la tool cargar_conocimiento; el corpus nunca entra al prompt.",
     "evals": "El motor, los perfiles y los invariantes son NÚCLEO (iguales para todos). Los escenarios y la config del rubro son del CLIENTE y por eso están en 'ejemplo' y en 'nunca_tocar': se escriben una vez por proyecto y no se pisan nunca.",
+    ".env.example": "Dejó de ser del núcleo el 2026-09-16 y pasó a la semilla. El motivo se vio construyendo a Sofía: ese agente lee su catálogo de una planilla de Google y necesita declarar PLANILLA_URL para que alguien sepa que existe. Con el archivo en el núcleo, la siguiente sincronización o se lo borraba o lo dejaba marcado DIVERGIDO para siempre. Como semilla se deposita una vez al nacer y desde ahí es del cliente, igual que agente.config.json.",
+    "botones": "agent/botones.js viaja SIEMPRE y no cambia el contrato: processMessage sigue devolviendo string|null. Una tool del cliente llama a botones.proponer(canalId, [...]) y el canal los adjunta al enviar; core.js limpia lo pendiente al empezar cada turno para que unos botones que no llegaron a salir no se peguen al mensaje siguiente. Un agente que no propone ninguno no cambia en nada.",
     "flujo": "agent/flujo.js viaja SIEMPRE y viene APAGADO: sin 'flujo.agentes' en agente.config.json el núcleo toma el mismo camino de antes de que existiera. Partir el agente en varios es una decisión que se toma mirando el panel de métricas de un cliente real, no al crear el proyecto. La semilla nace con un agente único a propósito, y lleva el bloque de ejemplo comentado como '_flujo_ejemplo' dentro de su agente.config.json."
   }
 }

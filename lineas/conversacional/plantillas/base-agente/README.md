@@ -30,6 +30,7 @@ base-agente/
 | `agent/conocimiento.js` | Lo que el negocio sabe, en archivos: **el índice va al prompt, el corpus no**. Inyecta y resuelve `cargar_conocimiento` |
 | `agent/flujo.js` | Varios agentes especializados declarados en la config. **Viene apagado**. Inyecta y resuelve `cambiar_etapa` |
 | `agent/lead.js` | Lo que ya se sabe de la persona: el bloque *"ya sabes / te falta"*, llenado con lo que reciben las tools |
+| `agent/botones.js` | Botones de respuesta rápida: la tool los propone, el envío los consume. **Duran un turno** |
 | `lib/texto.js` | `dividirMensaje` compartido por todos los canales de envío |
 | `evals/motor.js` | Arnés de pruebas: mock del LLM, runner y reporte. **Bloquea los efectos externos antes de cargar nada** |
 | `evals/reglas.js` | Los 8 invariantes que se verifican solos en cada turno |
@@ -46,7 +47,6 @@ base-agente/
 | `scripts/listo-para-entrega.js` | `npm run entrega`: compuerta previa a la entrega. **La semilla se declara semilla y esto la caza** |
 | `nixpacks.toml` | Build de Railway |
 | `.gitignore` | Mantiene `.env` fuera del repo del cliente |
-| `.env.example` | **Solo secretos y conexiones.** El comportamiento vive en `agente.config.json` |
 | `package.json` | Dependencias del núcleo. Nombre **fijo**: un marcador en `name` rompe `npm install` |
 | `package.json.tpl` | Plantilla del `package.json` del cliente, con marcadores que sustituye el script |
 | `scripts/humo.js` | Prueba de humo: arma el overlay y verifica que el núcleo enciende |
@@ -55,7 +55,9 @@ base-agente/
 
 ### Qué hay en `ejemplo/`
 
-`agente.config.json`, `agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (el dominio del vertical), `index.js`, `telegram/bot.js`, `evals/` (`escenarios.js` + `correr.js`) y `conocimiento/` (índice + dos temas de ejemplo). Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
+`agente.config.json`, `agent/prompts.js`, `agent/tools.js` (una tool de juguete), `database/supabase.js` (el dominio del vertical), `index.js`, `telegram/bot.js`, `evals/` (`escenarios.js` + `correr.js`), `conocimiento/` (índice + dos temas de ejemplo) y `.env.example`. Es lo mínimo para que el núcleo arranque, responda y se pruebe solo.
+
+**`.env.example` está acá y no en el núcleo desde la 1.7.0.** Un cliente con una integración propia —una planilla de Google, un CRM— tiene que poder declarar SUS variables donde alguien las vea. Con el archivo en el núcleo, la sincronización siguiente o se las borraba o lo dejaba marcado DIVERGIDO para siempre. Como semilla se deposita una vez al nacer y desde ahí es del cliente, igual que `agente.config.json`.
 
 Existe por una razón concreta: los archivos del núcleo **no se pueden correr solos**. `agent/core.js` pide `./prompts` y `./tools`; `agent/memory.js` pide `../database/supabase`. Sin la semilla, "el núcleo funciona" sería una afirmación sin forma de comprobarla.
 
@@ -67,7 +69,7 @@ npm install
 npm run humo
 ```
 
-Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **125 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
+Arma núcleo + ejemplo en `.probar/` según `MANIFIESTO.json`, corre **211 verificaciones** y borra el temporal. **Cero tokens, sin credenciales, sin red**: el cliente LLM es un doble guionizado que se inyecta con `_setClienteParaTests`.
 
 Qué cubre, por escenario:
 
@@ -84,6 +86,7 @@ Qué cubre, por escenario:
 | 8 | El arnés de evals: los 8 perfiles, los 6 invariantes uno por uno (que atrapen su fallo **y** dejen pasar lo sano) y la suite completa corriendo como la corre un cliente |
 | 9 | La config: precedencia en sus tres capas, typos que son error, archivo corrupto y archivo ausente, el **fallo cerrado** del prefijo de tablas, que `.env.example` no tape la config, la identidad llegando al prompt, el `startCommand` según canales, el validador aprobando **y** rechazando, y el chat local de punta a punta |
 | 10 | Conocimiento: el índice viaja en el prompt y **el corpus no**, la tool se inyecta y se ejecuta de verdad, una intención inventada devuelve la lista real, un archivo fuera de la carpeta se rechaza, el tope de palabras recorta y avisa, y con el índice roto el agente **sigue atendiendo** |
+| 14 | Botones: los topes de la API, la traducción del botón apretado, el envío, el silencio que los descarta, el candado del turno, y el aviso de derivación en el camino que no pasa por ninguna tool |
 | 11 | El panel: agrupa por conversación (una derivación con dos silencios es **una**), los hitos del negocio, la aritmética del costo con números elegidos, el estado vacío explicando por qué, y que cada campo de métricas **tenga su columna** en el DDL |
 
 Como usa el mismo mecanismo de armado que el script de sincronización, valida el manifiesto **antes** de que se use contra un proyecto real.
@@ -190,6 +193,69 @@ Con eso salen tasa de conversión, turnos hasta el hito y tasa de "no sé" sin q
 El costo en dólares solo aparece si se declara el precio del proveedor (`metricas.precio_usd_millon_*`): una tabla de precios escrita en el núcleo envejece sola y mentiría sobre plata. Sin precio, muestra tokens.
 
 **Sin Supabase el panel no ve nada**, y lo dice: las métricas viven en el proceso del bot y se pierden al reiniciar. Para medir de verdad: `SUPABASE_URL` + `npm run schema` + aplicar el DDL.
+
+## Botones de respuesta rápida: `agent/botones.js`
+
+Un bot que escribe *"responde 1, 2 o 3"* recibe de vuelta "el 2", "la segunda",
+"requisitos" y "🙂", y cada variante es un turno más de modelo para adivinar qué quiso
+decir. Un botón devuelve un id exacto y cuesta cero tokens de interpretación.
+
+```js
+// dentro de agent/tools.js, cuando la tool ya sabe con qué opciones sigue la conversación
+const botones = require('./botones');
+
+const menu = botones.proponer(canalId, [
+  { id: `ficha:${p.id}`,      titulo: '📄 Ver información' },
+  { id: `requisitos:${p.id}`, titulo: '📋 Requisitos' },
+  { id: `agendar:${p.id}`,    titulo: '📅 Agendar visita' },
+]);
+return { ...resultado, botones_puestos: menu.map((b) => b.titulo) };
+```
+
+- **El contrato no cambia.** `processMessage` sigue devolviendo `string | null` y ningún
+  canal tuvo que aprender una forma nueva. La tool **propone**, el envío **consume**.
+- **Duran UN turno.** `core.js` limpia lo pendiente al empezar cada turno: unos botones
+  que se propusieron y no llegaron a salir —porque el turno derivó, o porque el buffer
+  fusionó el mensaje— se habrían pegado al mensaje siguiente, que ya es otra conversación.
+- **El silencio gana.** Con `null` no sale nada, botones incluidos. Un chat derivado que
+  igual ofrece "Agendar visita" es peor que un texto de más: ofrece una acción con una
+  persona ya escribiendo del otro lado.
+- **Los topes de WhatsApp se hacen cumplir acá**: 3 botones, 20 caracteres de título,
+  1024 de cuerpo. No son sugerencias — pasarse devuelve 400 y el mensaje **no se envía**.
+  Por eso se recorta y se avisa en el log, en vez de lanzar: un botón feo llega, una
+  excepción no.
+- **La carga útil viaja en el id.** `ficha:167972` le llega al modelo como
+  `Ver información [ref:167972]`. Sin eso, "Ver información" lo obliga a deducir de qué
+  se hablaba, y deducir es justo lo que un botón vino a evitar. La persona no ve la
+  referencia: en su teléfono queda el título del botón.
+- **Un botón de URL (`cta_url`) va solo**: la API no lo mezcla con botones de respuesta.
+  Es el caso de *"Escribirle"* sobre un `wa.me`, para avisarle a quien atiende.
+- En Telegram salen como teclado en línea, con el mismo código de cliente. En
+  `npm run chat` se aprietan escribiendo su número.
+
+## Avisar cuando se deriva: `handoff.alDerivar`
+
+`handoff.inbox` existía desde el primer día y lo único que hacía era imprimir una línea
+en el log de Railway, que no mira nadie: el cliente pedía una persona y la persona no se
+enteraba. Desde la 1.7.0 el núcleo da el enganche y el proyecto pone el mensajero:
+
+```js
+// en agent/tools.js, que core.js carga SIEMPRE — no en index.js
+handoff.alDerivar(async ({ canalId, motivo, inbox }) => {
+  await sendMessage(inbox, await armarInforme(canalId, motivo), {
+    botones: [{ tipo: 'url', titulo: '💬 Escribirle', url: `https://wa.me/${canalId}` }],
+  });
+});
+```
+
+Corre en **todas** las activaciones —petición explícita, palabras de riesgo, fallos
+técnicos y las que dispara una tool— y ese es el punto: la más común corta **antes** de
+llamar al modelo, así que desde una tool jamás se vería. Si el aviso revienta, la
+derivación se hace igual: es preferible una ejecutiva que no se enteró a un bot
+hablándole encima a quien pidió ayuda.
+
+**Va en `agent/tools.js` y no en `index.js`**: con el enganche en el servidor, el canal
+terminal y la suite de evals derivarían sin avisarle a nadie.
 
 ## Partir el agente en varios: el bloque `flujo`
 

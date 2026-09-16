@@ -1248,6 +1248,105 @@ async function main() {
   check(avisos13.some((a) => a.includes('entrega/DEMO.md')) && avisos13.some((a) => a.includes('tope_turnos_dia')),
     'y avisa (sin bloquear) del kit de entrega que falta y del techo de plan sin declarar');
 
+  // ── 14. Botones: la tool propone, el canal adjunta, y duran UN turno ────────
+  console.log('\n14. Botones de respuesta rápida y el aviso de derivación');
+  const botones = cargar('agent', 'botones.js');
+  const webhookMod = require(path.join(DIR_PRUEBA, 'whatsapp', 'webhook.js'));
+
+  // Lo que la API rechaza NO puede llegar a la API: un 400 de Meta no es un
+  // botón feo, es un mensaje que el cliente nunca recibe.
+  const recortados = botones.normalizar([
+    { id: 'a', titulo: 'Ver información de la propiedad completa' },
+    { id: 'b', titulo: 'Requisitos' },
+    { id: 'a', titulo: 'Repetido' },
+    { id: 'c', titulo: 'Agendar visita' },
+    { id: 'd', titulo: 'Uno de más' },
+  ]);
+  check(recortados.length === 3, 'nunca salen más de 3 botones (tope duro de WhatsApp)');
+  check(recortados.every((b) => b.titulo.length <= 20), 'ningún título supera los 20 caracteres');
+  check(!recortados.some((b) => b.titulo === 'Repetido'), 'un id repetido se descarta (la API rechaza el mensaje entero)');
+  check(botones.normalizar([{ tipo: 'url', titulo: 'Escribirle', url: 'javascript:1' }]).length === 0,
+    'un botón de URL sin una URL http(s) válida se descarta en vez de reventar el envío');
+
+  // El id lleva la carga útil y por eso apretar un botón no obliga a adivinar.
+  check(botones.textoDeRespuesta({ id: 'ficha:167972', titulo: 'Ver información' }) === 'Ver información [ref:167972]',
+    'apretar un botón le llega al modelo con su referencia, no solo con el título');
+
+  // El webhook traduce el botón apretado a texto: sin esto el mensaje se
+  // descartaba en silencio y el bot no contestaba nunca.
+  const extraer = webhookMod._extraerMensaje;
+  const desdeBoton = extraer({ entry: [{ changes: [{ value: { messages: [{
+    from: '56911111111', id: 'wamid.1', type: 'interactive',
+    interactive: { type: 'button_reply', button_reply: { id: 'agendar:88195', title: 'Agendar visita' } },
+  }] } }] }] });
+  check(desdeBoton?.texto === 'Agendar visita [ref:88195]',
+    'el webhook convierte un botón apretado en el texto que ve el modelo');
+  check(extraer({ entry: [{ changes: [{ value: { messages: [{ from: '569', id: 'w', type: 'text', text: { body: 'hola' } }] } }] }] })?.texto === 'hola',
+    'y el camino de texto de siempre sigue igual');
+
+  // El envío los adjunta de verdad, y el SILENCIO gana: un turno derivado no
+  // manda botones aunque una tool los haya propuesto.
+  botones.proponer('humo-botones', [{ id: 'x:1', titulo: 'Agendar visita' }]);
+  const salidaBotones = await capturarConsola(() => sendMessage('humo-botones', 'Te dejo la ficha'));
+  check(/Agendar visita/.test(salidaBotones), 'el envío adjunta los botones propuestos durante el turno');
+  check(botones.ver('humo-botones').length === 0, 'y los consume: no se repiten en el mensaje siguiente');
+
+  botones.proponer('humo-botones', [{ id: 'x:2', titulo: 'Agendar visita' }]);
+  const salidaSilencio = await capturarConsola(() => sendMessage('humo-botones', null));
+  check(salidaSilencio.trim() === '', 'con null no sale NADA, botones incluidos');
+  check(botones.ver('humo-botones').length === 0,
+    'y los pendientes se descartan: un chat derivado no puede seguir ofreciendo botones');
+
+  const botFalso14 = crearBotFalso();
+  botones.proponer('tg99', [{ id: 'y:1', titulo: 'Requisitos' }]);
+  await enviarTelegram(botFalso14, 99, 'Ahí va', { canalId: 'tg99' });
+  check(botFalso14.enviados.length === 1, 'Telegram también los manda (mismo código de cliente, otro canal)');
+
+  // Y el candado del turno: lo que propuso un turno no se pega al siguiente.
+  const cliente14 = crearClienteFalso([texto('hola')]);
+  _setClienteParaTests(cliente14);
+  botones.proponer('humo-turno', [{ id: 'z:1', titulo: 'Del turno viejo' }]);
+  await processMessage('humo-turno', 'hola de nuevo');
+  check(botones.ver('humo-turno').length === 0,
+    'core.js limpia los botones al empezar cada turno: no sobreviven al turno que los propuso');
+
+  // El aviso de derivación: `handoff.inbox` imprimía una línea en un log que no
+  // mira nadie. Ahora hay enganche, y corre en el camino que MÁS importa — el
+  // de la petición explícita, que corta antes del modelo y por eso ninguna tool
+  // del cliente llegaría a enterarse.
+  const avisos14 = [];
+  handoffMod.alDerivar((aviso) => { avisos14.push(aviso); });
+  const cliente14b = crearClienteFalso([texto('esto no debería llegar')]);
+  _setClienteParaTests(cliente14b);
+  await processMessage('humo-aviso', 'quiero hablar con una ejecutiva');
+  check(avisos14.length === 1 && avisos14[0].canalId === 'humo-aviso' && avisos14[0].motivo === 'peticion',
+    'al derivar se avisa a quien registró el enganche, con el canal y el motivo');
+  check(cliente14b.llamadas.length === 0, 'y sigue sin gastar un token: el aviso no movió el handoff de lugar');
+
+  // Un aviso que revienta NO puede dejar el canal sin derivar: es preferible una
+  // ejecutiva que no se enteró a un bot hablándole encima a quien pidió ayuda.
+  handoffMod.alDerivar(() => { throw new Error('el mensajero falló'); });
+  await capturarConsola(() => processMessage('humo-aviso-roto', 'necesito hablar con una persona'));
+  check((await db.estadoCanal.get('humo-aviso-roto'))?.modo_humano === true,
+    'si el aviso falla, la derivación se hace igual');
+  handoffMod.alDerivar(null);
+
+  // El validador EJECUTA cada tool para comprobar que el despachador la
+  // resuelve, y las tools de un agente real derivan, registran leads y le
+  // mandan un WhatsApp a quien atiende. Correr `npm run validar` en una máquina
+  // con el token de producción habría mandado avisos de clientes que no
+  // existen. Se comprueba sobre el archivo porque el efecto que interesa es
+  // justamente el que NO ocurre: un check de comportamiento vería lo mismo con
+  // el blindaje puesto y sin él.
+  const fuenteValidador = fs.readFileSync(path.join(DIR_PRUEBA, 'scripts', 'validar-config.js'), 'utf8');
+  const apaga = fuenteValidador.indexOf('CREDENCIALES_DE_SALIDA');
+  const sondea = fuenteValidador.indexOf('ejecutarHerramienta(t.name');
+  check(apaga !== -1 && sondea !== -1 && apaga < sondea &&
+        /WHATSAPP_TOKEN/.test(fuenteValidador) && /delete process\.env\[clave\]/.test(fuenteValidador),
+    'el validador apaga las credenciales de salida ANTES de sondear las tools');
+  check(/finally\s*\{\s*Object\.assign\(process\.env, guardadas\)/.test(fuenteValidador),
+    'y las repone después, porque los checks del .env que tapa la config necesitan verlas');
+
   // ── Resultado ───────────────────────────────────────────────────────────────
   resetDemo();
   fs.rmSync(DIR_PRUEBA, { recursive: true, force: true });

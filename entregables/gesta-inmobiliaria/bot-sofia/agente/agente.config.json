@@ -1,0 +1,91 @@
+{
+  "_lee_esto_primero": "Configuración de Sofía, el agente de Gesta Inmobiliaria. Es el ÚNICO archivo donde se declara qué hace este bot: se versiona en git y lo valida `npm run validar`. Los secretos NO van acá — el proveedor de LLM, las keys y los tokens viven en .env.",
+
+  "cliente": {
+    "id": "gesta-sofia",
+    "nombre": "Gesta Inmobiliaria",
+    "vertical": "inmobiliaria",
+    "zona_horaria": "America/Santiago"
+  },
+
+  "identidad": {
+    "nombre_agente": "Sofía",
+    "rol": "atender a quienes preguntan por las propiedades publicadas y a los propietarios que quieren vender o arrendar con Gesta",
+    "tono": "español chileno, cercano y breve, de tú y sin sobreactuar",
+    "no_hacer": [
+      "inventar precios, direcciones, metros, gastos comunes o requisitos: solo lo que está en la planilla",
+      "ofrecer una propiedad parecida cuando la que preguntan no está publicada",
+      "confirmar un día y una hora de visita: eso lo cierra la ejecutiva",
+      "recitar requisitos de arriendo típicos del mercado si la planilla no los trae",
+      "hablar de comisiones, financiamiento, subsidios o trámites: eso lo ve una ejecutiva",
+      "seguir conversando después de agendar una visita o registrar una captación"
+    ]
+  },
+
+  "canales": {
+    "telegram": { "activo": false, "token_env": "TELEGRAM_TOKEN" },
+    "whatsapp": { "activo": true, "token_env": "WHATSAPP_TOKEN", "phone_id_env": "WHATSAPP_PHONE_ID" },
+    "terminal": { "activo": true }
+  },
+
+  "handoff": {
+    "_nota": "timeout_min null = la derivación es DEFINITIVA: cuando Sofía pasa la conversación a una ejecutiva, no vuelve a hablar sola. Es lo que pidió José para el cierre de cada flujo, y es el default recomendado del núcleo.",
+    "_inbox": "WhatsApp de la corredora, en formato internacional sin +, sin espacios y sin guiones (ej: 56912345678). Es el número al que llega el mini-informe con el botón para escribirle al cliente. SIN ESTO el informe solo queda en el log. Lo completa José.",
+    "activo": true,
+    "timeout_min": null,
+    "max_fallos": 3,
+    "inbox": ""
+  },
+
+  "limites": {
+    "_nota": "max_tokens_respuesta sube a 900 porque una ficha completa son ~470 caracteres y el modelo tiene que poder mandarla entera más una línea propia. El tope real del canal es el cuerpo de un mensaje con botones: 1024 caracteres.",
+    "historial_turnos": 30,
+    "max_tokens_respuesta": 900,
+    "timeout_modelo_ms": 25000,
+    "intentos_modelo": 3,
+    "buffer_ms": 6000,
+    "buffer_max_partes": 10,
+    "buffer_excepciones": ["handoff", "cancelacion", "adjunto"]
+  },
+
+  "datos": {
+    "_nota": "El proyecto Supabase se comparte entre agentes: TODA tabla va prefijada. Las propiedades NO están en la base — viven en la planilla de Google de la corredora.",
+    "prefijo": "gesta_sofia"
+  },
+
+  "conocimiento": {
+    "_nota": "Lo que Gesta sabe y no es una propiedad: cómo trabaja la corredora, qué cubre y qué no. Editar un archivo de conocimiento/ cambia lo que Sofía responde sin tocar código.",
+    "activo": true,
+    "carpeta": "conocimiento",
+    "tope_palabras": 800
+  },
+
+  "lead": {
+    "_nota": "Lo que Sofía recuerda de la persona para no volver a preguntárselo. Se llena solo, mirando los datos que reciben las herramientas.",
+    "activo": true,
+    "campos": [
+      { "campo": "nombre", "etiqueta": "su nombre", "claves": ["nombre"], "requerido": false }
+    ]
+  },
+
+  "_flujo": "Sofía es UN agente. Partirla en varios (uno para propiedades, otro para captación) se decide mirando `npm run metricas` cuando ya haya conversaciones reales, no antes.",
+
+  "metricas": {
+    "_nota": "Los hitos son hechos del NEGOCIO. 'sin_dato' y 'fuera_de_rm' se listan aunque den 0%: son la señal de qué le falta a la planilla y cuánta demanda llega de fuera de la Región Metropolitana.",
+    "_nota_topes": "tope_turnos_dia 1400 deja margen bajo el free tier de Gemini, que se agota en PEDIDOS POR DÍA y no en dólares: un cliente puede cruzar al tramo pagado con el costo marcando US$ 0.00.",
+    "activas": true,
+    "hitos": [
+      "ficha_entregada",
+      "requisitos_entregados",
+      "visita_agendada",
+      "captacion_registrada",
+      "derivada_ejecutiva",
+      "fuera_de_rm",
+      "sin_dato"
+    ],
+    "precio_usd_millon_entrada": 0,
+    "precio_usd_millon_salida": 0,
+    "presupuesto_usd_mes": 0,
+    "tope_turnos_dia": 1400
+  }
+}

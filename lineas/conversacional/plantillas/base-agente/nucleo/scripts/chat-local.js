@@ -18,6 +18,7 @@ require('dotenv').config();
 const RAIZ = path.resolve(__dirname, '..');
 const config = require(path.join(RAIZ, 'config'));
 const { processMessage, MENSAJE_ERROR, _setClienteParaTests } = require(path.join(RAIZ, 'agent', 'core'));
+const botones = require(path.join(RAIZ, 'agent', 'botones'));
 
 const REAL = process.argv.includes('--real');
 const CANAL_ID = 'chat-local';
@@ -54,6 +55,9 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 let cerrado = false;
 rl.on('close', () => { cerrado = true; });
 
+// Los botones del último turno, para poder apretarlos escribiendo su número.
+let ultimosBotones = [];
+
 function preguntar() {
   if (cerrado) return;
   rl.question('Tú:  ', async (texto) => {
@@ -61,14 +65,27 @@ function preguntar() {
     if (!limpio) return preguntar();
     if (/^(salir|exit|chao)$/i.test(limpio)) { rl.close(); return; }
 
+    // Apretar un botón se escribe como su número: [1], [2]… Sin esto, probar
+    // una conversación con botones por consola sería imposible, y la consola es
+    // justo donde se prueba antes de desplegar.
+    const eleccion = limpio.match(/^\[?(\d)\]?$/);
+    const entrada = (eleccion && ultimosBotones[Number(eleccion[1]) - 1])
+      ? botones.textoDeRespuesta(ultimosBotones[Number(eleccion[1]) - 1])
+      : limpio;
+
     try {
-      const respuesta = await processMessage(CANAL_ID, limpio, {
+      const respuesta = await processMessage(CANAL_ID, entrada, {
         onProgreso: (puente) => console.log(`Bot: ${puente}`),
       });
       // null = silencio real: hay una persona atendiendo, o el buffer fusionó
       // este turno con el siguiente. Se muestra como silencio y no como error,
       // igual que lo vería un cliente.
-      console.log(respuesta == null ? 'Bot: (silencio)\n' : `Bot: ${respuesta}\n`);
+      ultimosBotones = respuesta == null ? [] : botones.tomar(CANAL_ID);
+      console.log(respuesta == null ? 'Bot: (silencio)\n' : `Bot: ${respuesta}`);
+      if (ultimosBotones.length) {
+        console.log('     ' + ultimosBotones.map((b, i) => `[${i + 1}] ${b.titulo}`).join('   '));
+      }
+      if (respuesta != null) console.log('');
     } catch (error) {
       console.log(`Bot: ${MENSAJE_ERROR}\n     (${error.message})\n`);
     }

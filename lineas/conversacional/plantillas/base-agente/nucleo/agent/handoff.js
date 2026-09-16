@@ -119,6 +119,31 @@ async function enModoHumano(canalId) {
   return true;
 }
 
+// ─── Aviso de derivación ─────────────────────────────────────────────────────
+// `handoff.inbox` existía desde el primer día y no hacía NADA más que imprimir
+// una línea en el log de Railway: nadie mira eso, así que en la práctica el
+// cliente pedía una persona y la persona no se enteraba. El bot quedaba mudo y
+// el cliente esperando — el modo de falla más caro del handoff, y el más
+// silencioso.
+//
+// El núcleo no puede mandar el aviso solo: no sabe por qué canal avisa, ni qué
+// se le dice a la ejecutiva, ni qué pasó en la conversación. Así que da el
+// ENGANCHE y el proyecto pone el mensajero, una vez, en su index.js.
+//
+// Se llama en TODA activación: la que pide el cliente, la de las palabras de
+// riesgo, la de los fallos técnicos y la que dispara una tool del cliente. Ese
+// es el punto: el camino de la petición explícita corta antes del modelo, así
+// que una tool jamás se enteraría de esa derivación — justo la más común.
+let avisador = null;
+
+/**
+ * Registra a quién avisarle cuando se deriva. Se llama UNA vez al arrancar.
+ * @param {(aviso: {canalId: string, motivo: string, inbox: string}) => any} fn
+ */
+function alDerivar(fn) {
+  avisador = typeof fn === 'function' ? fn : null;
+}
+
 /** Marca el canal como atendido por una persona. */
 async function activar(canalId, motivo) {
   const estado = {
@@ -134,6 +159,17 @@ async function activar(canalId, motivo) {
     `[Handoff] ${canalId}: derivado a humano (motivo: ${motivo})` +
     (inbox ? ` — avisar a ${inbox}` : ' — sin "handoff.inbox" configurado')
   );
+
+  // NUNCA puede romper la derivación. Si el aviso falla, el canal igual queda
+  // en modo humano: es preferible una ejecutiva que no se enteró a un bot que
+  // sigue hablándole encima a alguien que pidió ayuda.
+  if (avisador) {
+    try {
+      await avisador({ canalId, motivo, inbox });
+    } catch (error) {
+      console.error('[Handoff] El aviso de derivación falló:', error.message);
+    }
+  }
   return estado;
 }
 
@@ -186,6 +222,7 @@ async function limpiarFallos(canalId) {
 
 module.exports = {
   activo,
+  alDerivar,
   timeoutMin,
   maxFallos,
   MENSAJE_DERIVACION,

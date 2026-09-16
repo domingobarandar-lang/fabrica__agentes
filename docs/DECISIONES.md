@@ -524,3 +524,64 @@ Los índices se mantienen estables a propósito: `ctx.respuestas[i]` apunta siem
 **Semáforo**: 🟡. Cambia el comportamiento observable del agente (una tool nueva, dos bloques nuevos de prompt) y toma decisiones de arquitectura no triviales. Sin gate 🔴: no hay agentes en uso, no se gastó dinero, no se creó ninguna credencial. El único punto que rozaba el rojo era saltarse el gate de métricas, y lo resolvió José.
 
 **Siguiente**: no hay paso 7. El plan del núcleo que arrancó el 2026-07-31 queda **terminado** con la 1.5.0. Lo que falta ya no es construir maquinaria, es usarla: el primer cliente real valida el molde, y de su panel salen las decisiones que hoy están escritas como capacidades apagadas — si el flujo se enciende, qué hitos importan, y si la ruta de Supabase aguanta.
+
+---
+
+## 2026-09-16 — Primer cliente real de la línea conversacional: Sofía, de Gesta Inmobiliaria
+
+**Decisión**: se construye el primer agente de un cliente real sobre el núcleo conversacional. Sofía atiende el WhatsApp de la corredora Gesta: resuelve consultas por propiedades publicadas (ficha, requisitos, agendamiento de visita) y toma propietarios que quieren vender o arrendar con ellos. Cada conversación termina con un informe al WhatsApp de la corredora. Runtime: Gemini (nunca Anthropic por defecto). Catálogo: la planilla de Google que la corredora ya mantiene.
+
+**Contexto**: es lo que la 1.5.0 dejó dicho — *"lo que falta ya no es construir maquinaria, es usarla: el primer cliente real valida el molde"*. El molde aguantó: el 90% del agente salió de rellenar los huecos que el núcleo deja (prompt, tools, capa de datos, escenarios, conocimiento). Lo que no aguantó está abajo, y es lo que justificó la 1.7.0.
+
+**Descartado**: (a) copiar las propiedades a una tabla de Supabase — obligaría a mantener dos verdades, y la que envejecería sería siempre la de la base; (b) leer la planilla con la API de Google Sheets — exige una cuenta de servicio nueva (**gate 🔴 nº2**) para leer exactamente los mismos datos que entrega la hoja publicada como CSV; (c) dejar que el modelo redacte la ficha — cada envío sería una oportunidad de redondear un precio, y la regla nº1 del cliente es que no invente.
+
+**Tres decisiones del producto que conviene no perder:**
+
+1. **La ficha la arma el código, no el modelo.** El modelo decide *cuándo* mandarla; *qué dice* sale de la planilla carácter por carácter (`agent/formato.js`). El escenario CU-2 verifica que el texto salga idéntico, así que "mejorar" la ficha a mano pone la suite en rojo.
+2. **Un dato ambiguo no se muestra.** La celda de gastos comunes de Buenos Aires 650 dice `14`, sin UF ni CLP: pueden ser catorce UF o catorce mil pesos. Sofía la omite y `npm run datos` la lista con su número de fila. Callar un dato dudoso es recuperable; publicarlo, no.
+3. **La derivación definitiva necesitaba una llave para deshacerla.** El handoff del núcleo es definitivo por diseño (2026-07-31) y acá cada camino termina derivando, así que un cliente que agenda una visita queda mudo **para siempre**. La corredora la abre escribiendo `liberar <número>` desde su propio teléfono. Sin eso, la decisión correcta del núcleo se convertía en un cliente perdido tres meses después.
+
+**Lo que este pedido le encontró a la maquinaria** (ver la entrada de la 1.7.0, abajo): el núcleo no sabía mandar botones, `handoff.inbox` no avisaba a nadie, el validador ejecutaba las tools de verdad, y la compuerta de entrega buscaba los entregables donde `nuevo-proyecto.ps1` no los pone.
+
+**Verificación, corriendo**: `npm test` **96/96 corridas** (12 escenarios × 8 perfiles) con **1164 verificaciones de invariantes**; `npm run validar` en verde; `npm run entrega` sin bloqueos; `npm run humo` del núcleo **211/211**. Todo en mock: 0 tokens, sin credenciales, sin red — el motor borra las credenciales y `evals/correr.js` borra además `PLANILLA_URL`, que es de este cliente y el motor no podía conocer.
+
+**Semáforo**: 🟡. **Pendiente de José (gate 🔴 nº1 y nº2)**: API key de Gemini, token de WhatsApp Business, Supabase, el link de la planilla y el WhatsApp de la corredora. Nada de eso bloqueó construir ni probar; todo bloquea el deploy.
+
+**Dónde vive**: `entregables/gesta-inmobiliaria/` **dentro de este repo**, que contradice la regla dura de carpeta externa por cliente. Ver la entrada siguiente.
+
+## 2026-09-16 — Núcleo conversacional 1.7.0: botones, y el aviso que no avisaba
+
+**Decisión**: sube el núcleo a 1.7.0 con cuatro cambios, los cuatro salidos de construir a Sofía y ninguno específico de una corredora.
+
+1. **Botones de respuesta rápida** (`agent/botones.js`). Una tool los propone, el canal los adjunta al enviar, y **duran un turno**. El contrato no cambia: `processMessage` sigue devolviendo `string | null`. WhatsApp los manda como mensaje interactivo (3 como máximo, título de 20 caracteres, cuerpo de 1024) y Telegram como teclado en línea, con el mismo código de cliente. El webhook traduce el botón apretado a texto en el borde del canal, así que de la cola hacia adentro sigue existiendo una sola forma de mensaje.
+2. **`handoff.alDerivar`**: el enganche que le faltaba a `handoff.inbox`. Esa clave existía desde el primer día y lo único que hacía era imprimir una línea en el log de Railway — que no mira nadie. En la práctica: el cliente pedía una persona y la persona no se enteraba. El enganche corre en **todas** las activaciones, y eso es el punto: la más común (pedir un humano) corta antes de llamar al modelo, así que desde una tool del cliente jamás se vería.
+3. **El validador dejó de producir efectos.** `npm run validar` ejecuta cada tool con input vacío para comprobar que el despachador la resuelve. Con las tools de un agente real eso derivaba un canal, registraba un lead y —con el token de producción en el `.env`— le habría mandado a la ejecutiva el aviso de un cliente que no existe. Ahora el sondeo corre con las credenciales de salida apagadas, igual que hace `evals/motor.js` con la suite.
+4. **La compuerta de entrega buscaba los entregables donde no están.** `nuevo-proyecto.ps1` crea `<cliente>/<proyecto>/agente`, con `entrega/` un nivel arriba y `BITACORA.md` dos. La compuerta los buscaba dentro de la carpeta del agente, así que avisaba de tres archivos que sí existían — **en todos los proyectos**. Un aviso que siempre suena es un aviso que nadie lee, que es lo que el propio archivo dice de sí mismo.
+
+**Y un cambio en el reparto**: `.env.example` **deja de ser del núcleo y pasa a la semilla**, protegido por `nunca_tocar`. Se vio con Sofía: ese agente lee su catálogo de una planilla y necesita declarar `PLANILLA_URL` para que alguien sepa que existe. Con el archivo en el núcleo, la siguiente sincronización o se lo borraba o lo dejaba marcado DIVERGIDO para siempre. Como semilla se deposita una vez al nacer y desde ahí es del cliente, igual que `agente.config.json`.
+
+**Un arreglo en el arnés**: el perfil `pide_humano` daba rojo en todo escenario cuyo camino feliz **termina** en una persona. Después de agendar, pedir una ejecutiva no puede producir un mensaje nuevo —el bot ya se calló— y el motor exigía el texto de derivación. Ahora acepta el silencio cuando el canal ya está en modo humano. Sin esto, el perfil quedaba fuera de casi todo agente que valga la pena.
+
+**Tres hallazgos, los tres por correr:**
+
+1. **Unos botones que no se enviaron se pegaban al mensaje siguiente.** Un turno que los propone y termina derivando los dejaba pendientes, y el mensaje siguiente —ya de otra conversación lógica— los arrastraba. Se limpian al empezar cada turno, en `core.js`, que es donde convergen todos los canales: un guarda por canal es un guarda que alguien olvida.
+2. **La guarda del silencio tenía que cubrir también los botones.** Un bot derivado que igual manda "Agendar visita" es peor que uno que manda un texto de más: ofrece una acción con una ejecutiva ya escribiendo del otro lado.
+3. **Un botón apretado llegaba como un mensaje que el webhook descartaba en silencio.** El payload de un interactivo no es `type: 'text'`. La persona veía su respuesta en el chat y el bot no contestaba nunca.
+
+**Verificación**: `npm run humo` **211/211** (antes 172). Escenario 14 nuevo: topes y recortes de la API, id repetido, URL inválida, la referencia que viaja en el id, la traducción del webhook, el envío con botones, el silencio que los descarta, Telegram, el candado del turno, el aviso de derivación en el camino que no pasa por ninguna tool, y un aviso que revienta sin llevarse la derivación por delante.
+
+**Semáforo**: 🟡. Cambia el comportamiento observable (una capacidad nueva de canal) y toca el reparto del manifiesto. Sin gate 🔴.
+
+## 2026-09-16 — El proyecto de Gesta nace DENTRO del repo, contra la regla dura
+
+**Decisión**: `entregables/gesta-inmobiliaria/` vive dentro de `fabrica__agentes/`, con la estructura que produciría `nuevo-proyecto.ps1` (`<cliente>/<proyecto>/agente`) y su propio `.gitignore`, `CLIENTE.md` y `BITACORA.md`. **Es una excepción explícita y temporal, no un cambio de la regla.**
+
+**Contexto**: esta sesión corrió en un contenedor remoto de Claude Code, efímero: lo que no se empuja a git se pierde cuando el contenedor se recicla. No hay disco de José, no hay carpeta madre de clientes, y **no hay PowerShell**, así que `nuevo-proyecto.ps1` y `sincronizar-nucleo.ps1` no se pudieron ejecutar (el núcleo se instaló con un script Node equivalente, leyendo el mismo `MANIFIESTO.json`). Las dos opciones eran entregar el trabajo dentro del repo o no entregarlo.
+
+**Qué hacer con esto**: José mueve `entregables/gesta-inmobiliaria/` a su carpeta madre de clientes, le corre `git init` y lo borra de este repo. Ahí la regla vuelve a no tener excepciones. Las instrucciones están en `entregables/README.md`.
+
+**Descartado**: (a) construirlo en `/tmp` y perderlo — no entrega nada; (b) `clientes/<slug>/` — esa carpeta quedó con solo `_plantilla/` el 2026-07-31 a propósito, y meterse ahí sería revivir el caso especial que se eliminó.
+
+**Lo que este pedido dejó pendiente y es decisión de José**: la fábrica **no puede correr sus propios scripts de distribución fuera de Windows**. `nuevo-proyecto.ps1`, `sincronizar-nucleo.ps1` y `validar-config.ps1` son PowerShell, y una sesión de Claude Code en la nube corre sobre Linux. Las opciones son (a) dejarlo así y aceptar que el trabajo en la nube instancia a mano, (b) gemelos en Node —con el riesgo que este mismo repo ya nombró: *"un esquema escrito dos veces se desincroniza el día que alguien agrega un campo con prisa"*—, o (c) mover los tres a Node y borrar los `.ps1`. **No se decidió acá**: cambiar la maquinaria de distribución sin poder probarla en Windows sería peor que el problema.
+
+**Semáforo**: 🟡, y con una nota. Deja el repo en un estado que contradice su propia constitución hasta que José mueva la carpeta.

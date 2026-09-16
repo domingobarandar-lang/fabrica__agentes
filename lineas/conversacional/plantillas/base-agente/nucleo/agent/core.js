@@ -19,6 +19,7 @@ const buffer       = require('./buffer');
 const metricas     = require('./metricas');
 const conocimiento = require('./conocimiento');
 const flujo        = require('./flujo');
+const botones      = require('./botones');
 const lead         = require('./lead');
 const config       = require('../config');
 
@@ -163,6 +164,12 @@ function encolar(canalId, mensaje, opciones) {
 async function procesarMensajeInterno(canalId, mensaje, opciones = {}) {
   const arranque = Date.now();
   const partes = mensaje.split('\n').length;
+
+  // Los botones duran UN turno. Se limpia acá, donde convergen todos los
+  // canales, y no en cada canal: si un turno propuso botones y no llegó a
+  // enviarlos —derivó a una persona, o el buffer fusionó el mensaje—, esos
+  // botones se pegarían al mensaje siguiente, que ya es otra conversación.
+  botones.limpiar(canalId);
 
   // ── 1. Handoff: ANTES de gastar un token ────────────────────────────────────
   // Si hay una persona atendiendo, el bot no habla. Devolver `null` (y no un

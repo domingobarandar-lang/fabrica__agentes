@@ -1,0 +1,17 @@
+{
+  "_lee_esto_primero": "Lo que Gesta sabe y no es una propiedad. Cada tema es un archivo de texto: editarlo cambia lo que Sofía responde, sin tocar código y sin volver a desplegar. Sofía recibe SOLO este índice; el contenido lo carga cuando hace falta. Tope duro: 800 palabras por archivo. NO agregues acá datos que ya estén en la planilla (precios, direcciones, requisitos): esos se leen de la planilla y aquí quedarían desactualizados.",
+  "temas": [
+    {
+      "intencion": "como_trabaja_gesta",
+      "archivo": "como-trabaja-gesta.md",
+      "descripcion": "cómo funciona la corredora: dónde trabaja, cómo se coordinan las visitas, cómo se toma una propiedad en captación",
+      "keywords": ["como funcionan", "trabajan", "cobran", "region", "metropolitana", "visita", "captacion", "vender con ustedes", "corredora"]
+    },
+    {
+      "intencion": "que_hace_sofia",
+      "archivo": "que-hace-sofia.md",
+      "descripcion": "qué puede y qué no puede resolver Sofía por este chat",
+      "keywords": ["eres un bot", "quien eres", "que puedes hacer", "ayuda", "no entiendo", "hablar con alguien"]
+    }
+  ]
+}

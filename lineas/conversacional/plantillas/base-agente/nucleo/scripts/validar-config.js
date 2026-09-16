@@ -155,13 +155,39 @@ async function revisarHerramientas() {
   // El despachador tiene que conocer cada nombre declarado. Se comprueba
   // llamándolo con input vacío y viendo que NO conteste "desconocida". Que
   // falle por validación de negocio es esperable y no se cuenta como error.
-  for (const t of TOOL_DEFINITIONS.filter((x) => x?.name)) {
-    try {
-      const r = await ejecutarHerramienta(t.name, {}, 'validador');
-      if (r && typeof r.error === 'string' && /desconocid/i.test(r.error)) {
-        errores.push(`la tool "${t.name}" está declarada pero ejecutarHerramienta no la resuelve`);
-      }
-    } catch { /* validación de negocio: no es asunto de este check */ }
+  //
+  // PERO ESTO EJECUTA LAS TOOLS DE VERDAD, y las tools de un agente real hacen
+  // cosas: registran un lead, derivan a una persona, le mandan un WhatsApp a
+  // quien atiende. Correr el validador en una máquina con el token de
+  // producción en el `.env` le habría mandado a la ejecutiva un aviso de un
+  // cliente que no existe — en el peor caso, uno por tool y por corrida.
+  //
+  // Así que el sondeo corre a oscuras: se apagan las credenciales de SALIDA
+  // mientras dura, igual que hace evals/motor.js con la suite. Los envíos caen
+  // en modo demo (consola) y la base queda en memoria. Se restauran enseguida,
+  // porque los checks de más abajo informan qué variables del `.env` están
+  // pisando la config y para eso tienen que verlas.
+  const CREDENCIALES_DE_SALIDA = [
+    'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_ID', 'TELEGRAM_TOKEN',
+    'SUPABASE_URL', 'SUPABASE_SERVICE_KEY', 'SUPABASE_ANON_KEY',
+    'LLM_API_KEY', 'ANTHROPIC_API_KEY',
+  ];
+  const guardadas = {};
+  for (const clave of CREDENCIALES_DE_SALIDA) {
+    if (process.env[clave] !== undefined) { guardadas[clave] = process.env[clave]; delete process.env[clave]; }
+  }
+
+  try {
+    for (const t of TOOL_DEFINITIONS.filter((x) => x?.name)) {
+      try {
+        const r = await ejecutarHerramienta(t.name, {}, 'validador-sin-efectos');
+        if (r && typeof r.error === 'string' && /desconocid/i.test(r.error)) {
+          errores.push(`la tool "${t.name}" está declarada pero ejecutarHerramienta no la resuelve`);
+        }
+      } catch { /* validación de negocio: no es asunto de este check */ }
+    }
+  } finally {
+    Object.assign(process.env, guardadas);
   }
 }
 

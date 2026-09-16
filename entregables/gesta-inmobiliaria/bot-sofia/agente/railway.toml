@@ -1,0 +1,11 @@
+# GENERADO por scripts/generar-railway.js desde agente.config.json.
+# No lo edites a mano: cambia los canales en la config y corre `npm run railway`.
+# (Está en "nunca_tocar" del manifiesto, así que sincronizar el núcleo no lo pisa.)
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node index.js"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

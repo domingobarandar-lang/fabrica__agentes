@@ -57,6 +57,20 @@ const leer = (rel) => {
 };
 const existe = (rel) => fs.existsSync(path.join(RAIZ, rel));
 
+// Los entregables NO viven dentro de la carpeta del agente, y la compuerta los
+// buscaba ahí. La estructura que arma nuevo-proyecto.ps1 es
+// <cliente>/<proyecto>/agente, con `entrega/` un nivel arriba y `BITACORA.md`
+// dos (la bitácora es del CLIENTE, no de cada proyecto suyo). Así que la
+// compuerta avisaba de tres archivos que sí existían, en todos los proyectos —
+// y un aviso que siempre suena es un aviso que nadie lee, que es exactamente lo
+// que este archivo dice de sí mismo un poco más abajo.
+const existeCerca = (rel, niveles = 2) => {
+  for (let i = 0; i <= niveles; i++) {
+    if (fs.existsSync(path.join(RAIZ, '../'.repeat(i), rel))) return true;
+  }
+  return false;
+};
+
 // ─── 1. La semilla sigue puesta ──────────────────────────────────────────────
 //
 // Dos listas y no una, porque la semilla tiene dos clases de archivo y
@@ -320,10 +334,10 @@ function revisarCobertura() {
 
 function revisarEntregables() {
   for (const f of ['entrega/DEMO.md', 'entrega/ONE-PAGER.md', 'entrega/OPERACION.md']) {
-    if (!existe(f)) R(f, 'falta (lo produce el subagente marketing en la fase 6 del pipeline)');
+    if (!existeCerca(f)) R(f, 'falta (lo produce el subagente marketing en la fase 6 del pipeline)');
   }
-  if (!existe('QA.md') && !existe('../QA.md')) R('QA.md', 'falta el reporte de QA');
-  if (!existe('BITACORA.md') && !existe('../BITACORA.md')) {
+  if (!existeCerca('QA.md')) R('QA.md', 'falta el reporte de QA');
+  if (!existeCerca('BITACORA.md')) {
     R('BITACORA.md', 'falta: sin ella los cambios a este agente no quedan registrados en ninguna parte');
   }
   if (!existe('.env.example')) R('.env.example', 'falta: el cliente no va a saber qué variables necesita para producción');

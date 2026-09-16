@@ -6,6 +6,7 @@ const router  = express.Router();
 
 const { processMessage, MENSAJE_ERROR } = require('../agent/core');
 const { sendMessage, markAsRead } = require('./sender');
+const botones = require('../agent/botones');
 
 const RE_TELEFONO = /^\d{7,15}$/;
 const MAX_MSG_LEN = 4096;
@@ -85,17 +86,49 @@ router.post('/', (req, res) => {
 });
 
 /**
- * Extrae el primer mensaje de texto del payload de Meta.
+ * Extrae el primer mensaje del payload de Meta y lo deja como TEXTO.
+ *
+ * Un botón apretado no llega como texto: llega como `interactive` con el id y
+ * el título que mandamos nosotros. Se traduce acá, en el borde del canal, para
+ * que de la cola hacia adentro (buffer, core, memoria, evals) exista una sola
+ * forma de mensaje — la de siempre, un string. Cuando esto no estaba, apretar
+ * un botón era un mensaje que el webhook descartaba en silencio: la persona veía
+ * su respuesta en el chat y el bot no contestaba nunca.
+ *
  * @returns {{ telefono: string, texto: string, messageId: string } | null}
  */
 function extraerMensaje(body) {
   const msg = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-  if (!msg || msg.type !== 'text') return null;
-  return {
-    telefono:  String(msg.from || ''),
-    texto:     msg.text?.body || '',
-    messageId: msg.id,
-  };
+  if (!msg) return null;
+
+  const base = { telefono: String(msg.from || ''), messageId: msg.id };
+
+  if (msg.type === 'text') {
+    return { ...base, texto: msg.text?.body || '' };
+  }
+
+  // Botón de un mensaje interactivo (el caso normal) o de una plantilla.
+  if (msg.type === 'interactive') {
+    const r = msg.interactive?.button_reply || msg.interactive?.list_reply;
+    if (!r) return null;
+    return { ...base, texto: botones.textoDeRespuesta({ id: r.id, titulo: r.title }) };
+  }
+  if (msg.type === 'button') {
+    return { ...base, texto: botones.textoDeRespuesta({ id: msg.button?.payload, titulo: msg.button?.text }) };
+  }
+
+  return null;
 }
+
+// Se expone solo para la prueba de humo: traducir un botón apretado a texto es
+// la clase de función que se rompe sin que ninguna prueba funcional lo note
+// (el bot simplemente deja de contestar a quien aprieta un botón).
+router._extraerMensaje = extraerMensaje;
+// Y la validación de firma, para que un guarda propio del cliente —el que
+// atiende al número del negocio antes que al del núcleo— pueda reusarla en vez
+// de escribir su propio HMAC. Una segunda implementación de esto es una
+// segunda oportunidad de equivocarse en el único punto que separa un webhook
+// abierto de uno cerrado.
+router._verificarFirma = verificarFirma;
 
 module.exports = router;
