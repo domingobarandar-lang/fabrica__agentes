@@ -43,7 +43,10 @@ router.get('/', (req, res) => {
   const modo  = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const reto  = req.query['hub.challenge'];
-  if (modo === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+  // Sin WHATSAPP_VERIFY_TOKEN configurado no se verifica nada: antes, una
+  // petición sin hub.verify_token pasaba porque undefined === undefined.
+  const esperado = process.env.WHATSAPP_VERIFY_TOKEN;
+  if (modo === 'subscribe' && esperado && token === esperado) {
     return res.status(200).send(reto);
   }
   res.sendStatus(403);

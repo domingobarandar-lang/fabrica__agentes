@@ -27,7 +27,7 @@ const PORT = process.env.PORT || 3300;
 app.listen(PORT, () => {
   console.log(`[Servidor] Agente inmobiliario escuchando en puerto ${PORT}`);
   if (usandoMemoria) {
-    console.warn('[DB] SUPABASE_URL/SUPABASE_ANON_KEY no configuradas — usando base EN MEMORIA con las semillas del SPEC (visitas y leads se pierden al reiniciar)');
+    console.warn('[DB] SUPABASE_URL/SUPABASE_SERVICE_KEY no configuradas — usando base EN MEMORIA con las semillas del SPEC (visitas y leads se pierden al reiniciar)');
   } else {
     // Test de conexión al arrancar: avisa temprano si falta ejecutar schema.sql
     db.testConexion().then((ok) => {

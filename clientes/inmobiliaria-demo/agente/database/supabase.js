@@ -1,5 +1,5 @@
 // Capa de acceso a datos del agente inmobiliario (Corredora Andes Propiedades).
-// Con SUPABASE_URL + SUPABASE_ANON_KEY usa Supabase; sin ellas cae a una base
+// Con SUPABASE_URL + SUPABASE_SERVICE_KEY usa Supabase; sin ellas cae a una base
 // EN MEMORIA con los datos semilla del SPEC (la demo v1 corre así, por terminal).
 //
 // OJO: en memoria nada sobrevive a un reinicio — las visitas y leads de una
@@ -15,7 +15,11 @@ if (!globalThis.WebSocket) {
 
 const { createClient } = require('@supabase/supabase-js');
 
-const usandoMemoria = !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY;
+// Clave del servidor (service_role): las tablas tienen RLS activado y sin
+// políticas, así que la anon —pública por diseño— no lee datos de clientes.
+// SUPABASE_ANON_KEY queda solo como respaldo de despliegues viejos.
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+const usandoMemoria = !process.env.SUPABASE_URL || !SUPABASE_KEY;
 
 // ─── Fechas (zona horaria de Chile) ──────────────────────────────────────────
 
@@ -152,7 +156,7 @@ const dbMemoria = {
 // ─── Implementación Supabase (producción — misma interfaz) ──────────────────
 
 function crearDbSupabase() {
-  const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  const supabase = createClient(process.env.SUPABASE_URL, SUPABASE_KEY, {
     // Redundante con el polyfill global de arriba (que es el fix real en
     // Node < 22); se mantiene como respaldo por si el global se pierde.
     realtime: { transport: ws },

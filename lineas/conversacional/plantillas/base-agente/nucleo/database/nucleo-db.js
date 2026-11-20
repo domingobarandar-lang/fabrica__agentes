@@ -115,6 +115,13 @@ function credenciales() {
   const url = process.env.SUPABASE_URL;
   // service_role primero: la anon da "permission denied" con RLS encendido.
   const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (url && key && !process.env.SUPABASE_SERVICE_KEY) {
+    // Las tablas del núcleo nacen con RLS activado (schema-nucleo.sql): con la
+    // anon el bot no puede leer ni escribir. Y si alguien apagó RLS para que
+    // "funcione", la anon —que es pública por diseño— abre las conversaciones
+    // de los clientes a cualquiera que la tenga.
+    console.warn('[DB] ⚠️ Conectado con SUPABASE_ANON_KEY. Usa SUPABASE_SERVICE_KEY (service_role) y deja RLS activado.');
+  }
   return url && key ? { url, key } : null;
 }
 

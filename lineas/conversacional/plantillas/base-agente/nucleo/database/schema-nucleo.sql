@@ -96,3 +96,13 @@ alter table {{PREFIJO}}_metricas add column if not exists hito           text;
 alter table {{PREFIJO}}_estado_canal add column if not exists agente_actual text;
 alter table {{PREFIJO}}_estado_canal add column if not exists lead          jsonb;
 alter table {{PREFIJO}}_metricas     add column if not exists agente        text;
+
+-- ─── Seguridad: RLS activado y SIN políticas ───────────────────────────────
+-- Bloquea las claves anon/authenticated: el proyecto es COMPARTIDO entre
+-- agentes y la anon es pública por diseño (suele terminar dentro de páginas
+-- web). Sin RLS, cualquiera con ella leería el historial de conversaciones de
+-- todos los negocios. El bot usa SUPABASE_SERVICE_KEY (service_role), que
+-- salta RLS y vive solo en el servidor.
+alter table {{PREFIJO}}_sesiones     enable row level security;
+alter table {{PREFIJO}}_estado_canal enable row level security;
+alter table {{PREFIJO}}_metricas     enable row level security;
