@@ -75,12 +75,14 @@ create table if not exists leads (
   actualizado_en    timestamptz not null default now()
 );
 
--- Demo: sin RLS (el acceso es solo desde el backend con service_role).
-alter table inmobiliaria_sesiones disable row level security;
-alter table propiedades           disable row level security;
-alter table horarios_visita       disable row level security;
-alter table visitas               disable row level security;
-alter table leads                 disable row level security;
+-- RLS activado y SIN políticas: la clave anon no entra; solo la service_role
+-- del backend (SUPABASE_SERVICE_KEY), que salta RLS. Sobre una base en uso:
+-- primero la clave en el servidor y redeploy; recién después estas líneas.
+alter table inmobiliaria_sesiones enable row level security;
+alter table propiedades           enable row level security;
+alter table horarios_visita       enable row level security;
+alter table visitas               enable row level security;
+alter table leads                 enable row level security;
 
 -- ─── Datos semilla del SPEC ──────────────────────────────────────────────────
 

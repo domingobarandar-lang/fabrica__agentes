@@ -524,3 +524,19 @@ Los índices se mantienen estables a propósito: `ctx.respuestas[i]` apunta siem
 **Semáforo**: 🟡. Cambia el comportamiento observable del agente (una tool nueva, dos bloques nuevos de prompt) y toma decisiones de arquitectura no triviales. Sin gate 🔴: no hay agentes en uso, no se gastó dinero, no se creó ninguna credencial. El único punto que rozaba el rojo era saltarse el gate de métricas, y lo resolvió José.
 
 **Siguiente**: no hay paso 7. El plan del núcleo que arrancó el 2026-07-31 queda **terminado** con la 1.5.0. Lo que falta ya no es construir maquinaria, es usarla: el primer cliente real valida el molde, y de su panel salen las decisiones que hoy están escritas como capacidades apagadas — si el flujo se enciende, qué hitos importan, y si la ruta de Supabase aguanta.
+
+## 2026-11-20 — Núcleo 1.6.1: seguridad antes de hacer público el repo
+
+[🟡 POR LEER] Revisión de fugas antes de publicar `fabrica__agentes`. El historial no tenía claves ni datos de clientes; los hallazgos son de diseño:
+
+1. **`schema-nucleo.sql` creaba las tablas sin RLS**, y `nucleo-db.js` cae a `SUPABASE_ANON_KEY` si falta `SUPABASE_SERVICE_KEY`. El proyecto Supabase es compartido entre agentes y la anon es pública por diseño (suele quedar dentro de páginas web): sin RLS, cualquiera con ella lee el historial de conversaciones de todos los negocios. Ahora las tres tablas del núcleo nacen con RLS activado y sin políticas, y el núcleo avisa al arrancar si está usando la anon.
+2. **El webhook de WhatsApp aprobaba la verificación sin `WHATSAPP_VERIFY_TOKEN` configurado** (`undefined === undefined`). Ahora exige que el token exista.
+3. **`clientes/inmobiliaria-demo` tenía el patrón viejo de chaski**: clave anon y `disable row level security` explícito en sus cinco tablas. Pasa a `SUPABASE_SERVICE_KEY` (anon solo como respaldo) con RLS activado; su suite y su modo mock borran también la clave del servidor.
+
+**Orden al aplicarlo sobre una base en uso**: primero `SUPABASE_SERVICE_KEY` en el servidor y redeploy; recién después los `alter table … enable row level security`. Al revés, el bot queda sin base hasta el redeploy. Los proyectos de cliente reciben el cambio en la próxima sincronización del núcleo (`sincronizar-nucleo.ps1 -Aplicar`).
+
+**Pendiente, no resuelto acá**: el núcleo no tiene tope de mensajes por conversación y por día. En un bot público, una sola persona puede gastar el crédito de la API del modelo. En chaski-agentes se resolvió con `LIMITE_MENSAJES_DIA`; en el núcleo corresponde un bloque en `limites` de `agente.config.json`, que es un cambio de la superficie de configuración y queda para una pasada propia.
+
+**Verificación**: `npm run humo` → 193/193 en verde. Suite de `inmobiliaria-demo` → 18/18. Falta espejar esta entrada en la Bitácora de la Fábrica en Notion.
+
+**Semáforo**: 🟡. Cambia comportamiento observable (el bot se niega a la verificación sin token; con la anon y RLS activado no tiene base).

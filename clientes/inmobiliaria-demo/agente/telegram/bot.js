@@ -150,6 +150,7 @@ function arrancarModoMock() {
   // El mock corre siempre contra la base EN MEMORIA (no ensuciar Supabase real)
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_ANON_KEY;
+  delete process.env.SUPABASE_SERVICE_KEY;
 
   const mockState = { pasos: [], log: [], contadorId: 0 };
 

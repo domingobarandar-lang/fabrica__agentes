@@ -21,6 +21,7 @@ const MODO_MOCK = true;
 // El mock corre contra la base EN MEMORIA (no ensuciar un Supabase real)
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_ANON_KEY;
+delete process.env.SUPABASE_SERVICE_KEY;
 
 // ─── Mock del cliente LLM (se inyecta ANTES de cargar el agente) ─────────────
 
